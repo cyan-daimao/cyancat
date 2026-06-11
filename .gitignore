@@ -1,0 +1,12 @@
+.task
+.cache
+bin
+/cyancat
+frontend/dist
+!frontend/dist/
+!frontend/dist/index.html
+frontend/node_modules
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+.gocache
+.DS_store
