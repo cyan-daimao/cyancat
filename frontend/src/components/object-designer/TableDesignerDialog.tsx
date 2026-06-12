@@ -75,12 +75,23 @@ function newDraftId(): string {
   return `draft_${nextDraftId++}`;
 }
 
+// 标准化数据库返回的类型字符串到 UI 候选值集合
+// 例：'varchar(255)' → 'VARCHAR', 'int(11) unsigned' → 'INT', 'decimal(10,2)' → 'DECIMAL'
+function normalizeDataType(raw: string): string {
+  if (!raw) return 'INT';
+  // 去掉括号及其内容
+  let s = raw.replace(/\(.*?\)/g, '');
+  // 去掉常见后缀修饰词 (unsigned / zerofill / signed)
+  s = s.replace(/\b(unsigned|zerofill|signed)\b/gi, '');
+  return s.trim().toUpperCase();
+}
+
 // ColumnDTO → FieldDraft
 function columnToField(c: ColumnDTO): FieldDraft {
   return {
     id: newDraftId(),
     name: c.name,
-    dataType: c.databaseType,
+    dataType: normalizeDataType(c.databaseType),
     typeLength: c.typeLength,
     precision: c.precision,
     scale: c.scale,
@@ -101,7 +112,7 @@ function indexToDraft(idx: IndexDTO): IndexDraft {
     name: idx.name,
     type: idx.primary ? 'PRIMARY' : idx.unique ? 'UNIQUE' : 'NORMAL',
     columns: idx.columns || [],
-    comment: '',
+    comment: idx.comment ?? '',
     status: 'existing',
   };
 }
@@ -259,6 +270,7 @@ const TableDesignerDialog: React.FC = () => {
       const droppedCols = fields.filter(f => f.status === 'deleted').map(f => f.name);
       const modifiedCols = fields.filter(f => f.status === 'modified').map(fieldToSpec);
       const addedIdx = indexes.filter(i => i.status === 'new').map(indexDraftToSpec);
+      const modifiedIdx = indexes.filter(i => i.status === 'modified').map(indexDraftToSpec);
       const droppedIdx = indexes.filter(i => i.status === 'deleted').map(i => i.name);
       const addedFKs = foreignKeys.filter(fk => fk.status === 'new').map(fkDraftToSpec);
       const droppedFKs = foreignKeys.filter(fk => fk.status === 'deleted').map(fk => fk.name);
@@ -273,6 +285,7 @@ const TableDesignerDialog: React.FC = () => {
         renameColumns: [],
         modifyColumns: modifiedCols,
         addIndexes: addedIdx,
+        modifyIndexes: modifiedIdx,
         dropIndexes: droppedIdx,
         addForeignKeys: addedFKs,
         dropForeignKeys: droppedFKs,
@@ -358,6 +371,7 @@ const TableDesignerDialog: React.FC = () => {
           renameColumns: [],
           modifyColumns: fields.filter(f => f.status === 'modified').map(fieldToSpec),
           addIndexes: indexes.filter(i => i.status === 'new').map(indexDraftToSpec),
+          modifyIndexes: indexes.filter(i => i.status === 'modified').map(indexDraftToSpec),
           dropIndexes: indexes.filter(i => i.status === 'deleted').map(i => i.name),
           addForeignKeys: foreignKeys.filter(fk => fk.status === 'new').map(fkDraftToSpec),
           dropForeignKeys: foreignKeys.filter(fk => fk.status === 'deleted').map(fk => fk.name),

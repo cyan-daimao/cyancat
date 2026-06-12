@@ -207,10 +207,11 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 // ListIndexes 列出表的索引
 func (i *inspector) ListIndexes(ctx context.Context, database, schema, table string) ([]driver.Index, error) {
 	target := pickSchema(database, schema)
-	const q = `SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SEQ_IN_INDEX
-		FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-		ORDER BY INDEX_NAME, SEQ_IN_INDEX`
+	const q = `SELECT s.INDEX_NAME, s.NON_UNIQUE, s.COLUMN_NAME, s.SEQ_IN_INDEX,
+		IFNULL(s.INDEX_COMMENT, '')
+		FROM INFORMATION_SCHEMA.STATISTICS s
+		WHERE s.TABLE_SCHEMA = ? AND s.TABLE_NAME = ?
+		ORDER BY s.INDEX_NAME, s.SEQ_IN_INDEX`
 
 	rows, err := i.conn.db.QueryContext(ctx, q, target, table)
 	if err != nil {
@@ -224,7 +225,8 @@ func (i *inspector) ListIndexes(ctx context.Context, database, schema, table str
 		var name, col string
 		var nonUnique int
 		var seq int
-		if err := rows.Scan(&name, &nonUnique, &col, &seq); err != nil {
+		var comment string
+		if err := rows.Scan(&name, &nonUnique, &col, &seq, &comment); err != nil {
 			return nil, err
 		}
 		if _, ok := idxMap[name]; !ok {
@@ -232,6 +234,7 @@ func (i *inspector) ListIndexes(ctx context.Context, database, schema, table str
 				Name:    name,
 				Unique:  nonUnique == 0,
 				Primary: name == "PRIMARY",
+				Comment: comment,
 			}
 			order = append(order, name)
 		}

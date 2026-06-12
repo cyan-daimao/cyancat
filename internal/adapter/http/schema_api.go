@@ -196,3 +196,44 @@ func (a *SchemaAPI) AlterTable(req *dto.AlterTableRequest) *api.Response[bool] {
 	}
 	return api.Success(true)
 }
+
+// PreviewDropTable 预览 DROP TABLE DDL
+func (a *SchemaAPI) PreviewDropTable(req *dto.DropTableRequest) *api.Response[string] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[string](api.BadRequestCode, "", "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[string](api.BadRequestCode, "", "table name is required")
+	}
+	cmd := &schemaservice.DropTableCmd{
+		ConnID:   req.ConnID,
+		Database: req.Database,
+		Schema:   req.Schema,
+		Name:     req.Name,
+	}
+	ddl, err := a.svc.PreviewDropTable(cmd)
+	if err != nil {
+		return api.Fail[string](api.ErrorCode, "", err.Error())
+	}
+	return api.Success(ddl)
+}
+
+// DropTable 删除表
+func (a *SchemaAPI) DropTable(req *dto.DropTableRequest) *api.Response[bool] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[bool](api.BadRequestCode, false, "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[bool](api.BadRequestCode, false, "table name is required")
+	}
+	cmd := &schemaservice.DropTableCmd{
+		ConnID:   req.ConnID,
+		Database: req.Database,
+		Schema:   req.Schema,
+		Name:     req.Name,
+	}
+	if err := a.svc.DropTable(cmd); err != nil {
+		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	return api.Success(true)
+}

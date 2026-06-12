@@ -37,6 +37,7 @@ type AlterTableCmd struct {
 	RenameColumns   []ColumnRename
 	ModifyColumns   []ColumnSpec
 	AddIndexes      []IndexSpec
+	ModifyIndexes   []IndexSpec
 	DropIndexes     []string
 	AddForeignKeys  []ForeignKeySpec
 	DropForeignKeys []string
@@ -44,6 +45,14 @@ type AlterTableCmd struct {
 	Charset         string
 	Collation       string
 	Comment         string
+}
+
+// DropTableCmd 删除表命令
+type DropTableCmd struct {
+	ConnID   int64
+	Database string
+	Schema   string
+	Name     string
 }
 
 // ColumnSpec 应用层字段规格（用于 DDL 命令）

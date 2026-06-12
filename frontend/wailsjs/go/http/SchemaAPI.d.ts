@@ -28,3 +28,7 @@ export function ListViews(arg1:number,arg2:string,arg3:string):Promise<api.Respo
 export function PreviewAlterTable(arg1:dto.AlterTableRequest):Promise<api.Response_string_>;
 
 export function PreviewCreateTable(arg1:dto.CreateTableRequest):Promise<api.Response_string_>;
+
+export function PreviewDropTable(arg1:dto.DropTableRequest):Promise<api.Response_string_>;
+
+export function DropTable(arg1:dto.DropTableRequest):Promise<api.Response_bool_>;

@@ -195,6 +195,7 @@ func ToIndexBOs(list []driver.Index) []*IndexBO {
 			Columns: idx.Columns,
 			Unique:  idx.Unique,
 			Primary: idx.Primary,
+			Comment: idx.Comment,
 		})
 	}
 	return result
@@ -241,6 +242,7 @@ func ToTableDetailBO(detail *driver.TableDetail) *TableDetailBO {
 				Columns: idx.Columns,
 				Unique:  idx.Unique,
 				Primary: idx.Primary,
+				Comment: idx.Comment,
 			})
 		}
 	}

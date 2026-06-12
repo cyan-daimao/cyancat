@@ -324,6 +324,13 @@ func (g *ddlGenerator) AlterTable(spec driver.AlterTableSpec) (string, error) {
 	for _, idx := range spec.DropIndexes {
 		actions = append(actions, "DROP INDEX "+g.quote(idx))
 	}
+	// 修改索引 = DROP + ADD（MySQL 不支持 ALTER INDEX COMMENT）
+	for _, idx := range spec.ModifyIndexes {
+		if idx.Name == "" {
+			return "", fmt.Errorf("mysql/ddl: modify index requires name")
+		}
+		actions = append(actions, "DROP INDEX "+g.quote(idx.Name))
+	}
 	for _, col := range spec.DropColumns {
 		actions = append(actions, "DROP COLUMN "+g.quote(col))
 	}

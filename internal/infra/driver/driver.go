@@ -260,6 +260,8 @@ type Index struct {
 	Unique bool
 	// Primary 是否主键索引
 	Primary bool
+	// Comment 索引注释
+	Comment string
 }
 
 // ForeignKey 外键元数据

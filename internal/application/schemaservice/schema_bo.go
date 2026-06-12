@@ -80,6 +80,8 @@ type IndexBO struct {
 	Unique bool
 	// Primary 是否主键索引
 	Primary bool
+	// Comment 索引注释
+	Comment string
 }
 
 // ForeignKeyBO 外键业务对象

@@ -38,7 +38,7 @@ function renderIcon(name?: string): React.ReactNode {
 const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, children }) => {
   const { setSelectedNode, loadDatabases, loadTables, loadTableDetail, resetTree } = useSchemaStore();
   const { openConnIds, openConnection, closeConnection } = useConnectionStore();
-  const { openCreateDatabase, openTableDesigner, openDDLViewer } = useDesignerStore();
+  const { openCreateDatabase, openTableDesigner, openDDLViewer, openDropTableConfirm } = useDesignerStore();
   const { addEmptyResult, execute } = useQueryStore();
 
   const isConnOpen = openConnIds.has(node.connID);

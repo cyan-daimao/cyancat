@@ -86,6 +86,8 @@ type IndexDTO struct {
 	Unique bool `json:"unique"`
 	// Primary 是否主键索引
 	Primary bool `json:"primary"`
+	// Comment 索引注释
+	Comment string `json:"comment"`
 }
 
 // ForeignKeyDTO 外键
@@ -280,6 +282,8 @@ type AlterTableRequest struct {
 	ModifyColumns []ColumnSpecDTO `json:"modifyColumns"`
 	// AddIndexes 新增索引
 	AddIndexes []IndexSpecDTO `json:"addIndexes"`
+	// ModifyIndexes 修改索引
+	ModifyIndexes []IndexSpecDTO `json:"modifyIndexes"`
 	// DropIndexes 删除索引
 	DropIndexes []string `json:"dropIndexes"`
 	// AddForeignKeys 新增外键
@@ -306,6 +310,18 @@ type GetCreateTableDDLRequest struct {
 	Schema string `json:"schema"`
 	// Table 表名
 	Table string `json:"table"`
+}
+
+// DropTableRequest 删除表请求
+type DropTableRequest struct {
+	// ConnID 连接 ID
+	ConnID int64 `json:"connID"`
+	// Database 数据库名
+	Database string `json:"database"`
+	// Schema schema 名
+	Schema string `json:"schema"`
+	// Name 表名
+	Name string `json:"name"`
 }
 
 // ListCharsetsRequest 列出字符集请求
@@ -444,6 +460,7 @@ func ToTableDetailDTO(bo *schemaservice.TableDetailBO) *TableDetailDTO {
 			Columns: idx.Columns,
 			Unique:  idx.Unique,
 			Primary: idx.Primary,
+			Comment: idx.Comment,
 		})
 	}
 	fks := make([]ForeignKeyDTO, 0, len(bo.ForeignKeys))
@@ -570,6 +587,9 @@ func ToAlterTableCmd(req *AlterTableRequest) *schemaservice.AlterTableCmd {
 	for _, idx := range req.AddIndexes {
 		cmd.AddIndexes = append(cmd.AddIndexes, toIndexSpec(idx))
 	}
+	for _, idx := range req.ModifyIndexes {
+		cmd.ModifyIndexes = append(cmd.ModifyIndexes, toIndexSpec(idx))
+	}
 	cmd.DropIndexes = req.DropIndexes
 	for _, fk := range req.AddForeignKeys {
 		cmd.AddForeignKeys = append(cmd.AddForeignKeys, toForeignKeySpec(fk))
@@ -614,5 +634,18 @@ func toForeignKeySpec(fk ForeignKeySpecDTO) schemaservice.ForeignKeySpec {
 		ReferencedColumns: fk.ReferencedColumns,
 		OnDelete:          fk.OnDelete,
 		OnUpdate:          fk.OnUpdate,
+	}
+}
+
+// ToDropTableCmd 转换删除表命令
+func ToDropTableCmd(req *DropTableRequest) *schemaservice.DropTableCmd {
+	if req == nil {
+		return nil
+	}
+	return &schemaservice.DropTableCmd{
+		ConnID:   req.ConnID,
+		Database: req.Database,
+		Schema:   req.Schema,
+		Name:     req.Name,
 	}
 }

@@ -337,6 +337,7 @@ func (s *SchemaServiceImpl) PreviewAlterTable(cmd *AlterTableCmd) (string, error
 	spec.AddColumns = toDriverColumnSpecs(cmd.AddColumns)
 	spec.ModifyColumns = toDriverColumnSpecs(cmd.ModifyColumns)
 	spec.AddIndexes = toDriverIndexSpecs(cmd.AddIndexes)
+	spec.ModifyIndexes = toDriverIndexSpecs(cmd.ModifyIndexes)
 	spec.AddForeignKeys = toDriverForeignKeySpecs(cmd.AddForeignKeys)
 	for _, r := range cmd.RenameColumns {
 		spec.RenameColumns = append(spec.RenameColumns, driver.ColumnRename{Old: r.Old, New: r.New})
@@ -367,6 +368,37 @@ func (s *SchemaServiceImpl) AlterTable(cmd *AlterTableCmd) error {
 		}
 	}
 	return nil
+}
+
+// PreviewDropTable 预览 DROP TABLE DDL（不执行）
+func (s *SchemaServiceImpl) PreviewDropTable(cmd *DropTableCmd) (string, error) {
+	if cmd == nil || cmd.ConnID <= 0 {
+		return "", errors.New("schemaservice: connID is required")
+	}
+	if strings.TrimSpace(cmd.Name) == "" {
+		return "", errors.New("schemaservice: table name is required")
+	}
+	conn, err := s.sessionMgr.Get(cmd.ConnID)
+	if err != nil {
+		return "", err
+	}
+	return conn.DDL().DropTable(cmd.Database, cmd.Schema, cmd.Name)
+}
+
+// DropTable 删除表
+func (s *SchemaServiceImpl) DropTable(cmd *DropTableCmd) error {
+	sql, err := s.PreviewDropTable(cmd)
+	if err != nil {
+		return err
+	}
+	conn, err := s.sessionMgr.Get(cmd.ConnID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err = conn.Execute(ctx, sql)
+	return err
 }
 
 // splitDDLStatements 拆分多语句 DDL（按 ";\n" 简单拆分；不处理字符串中的分号）

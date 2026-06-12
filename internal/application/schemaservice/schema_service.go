@@ -35,4 +35,8 @@ type SchemaService interface {
 	PreviewAlterTable(cmd *AlterTableCmd) (string, error)
 	// AlterTable 修改表
 	AlterTable(cmd *AlterTableCmd) error
+	// PreviewDropTable 预览 DROP TABLE DDL（不执行）
+	PreviewDropTable(cmd *DropTableCmd) (string, error)
+	// DropTable 删除表
+	DropTable(cmd *DropTableCmd) error
 }

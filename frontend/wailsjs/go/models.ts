@@ -655,6 +655,7 @@ export namespace dto {
 	    renameColumns: ColumnRenameDTO[];
 	    modifyColumns: ColumnSpecDTO[];
 	    addIndexes: IndexSpecDTO[];
+	    modifyIndexes: IndexSpecDTO[];
 	    dropIndexes: string[];
 	    addForeignKeys: ForeignKeySpecDTO[];
 	    dropForeignKeys: string[];
@@ -678,6 +679,7 @@ export namespace dto {
 	        this.renameColumns = this.convertValues(source["renameColumns"], ColumnRenameDTO);
 	        this.modifyColumns = this.convertValues(source["modifyColumns"], ColumnSpecDTO);
 	        this.addIndexes = this.convertValues(source["addIndexes"], IndexSpecDTO);
+	        this.modifyIndexes = this.convertValues(source["modifyIndexes"], IndexSpecDTO);
 	        this.dropIndexes = source["dropIndexes"];
 	        this.addForeignKeys = this.convertValues(source["addForeignKeys"], ForeignKeySpecDTO);
 	        this.dropForeignKeys = source["dropForeignKeys"];
@@ -975,6 +977,24 @@ export namespace dto {
 	    }
 	}
 	
+	export class DropTableRequest {
+	    connID: number;
+	    database: string;
+	    schema: string;
+	    name: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DropTableRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ("string" === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	    }
+	}
 	export class GetCreateTableDDLRequest {
 	    connID: number;
 	    database: string;
@@ -998,17 +1018,19 @@ export namespace dto {
 	    columns: string[];
 	    unique: boolean;
 	    primary: boolean;
-	
+	    comment: string;
+
 	    static createFrom(source: any = {}) {
 	        return new IndexDTO(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.columns = source["columns"];
 	        this.unique = source["unique"];
 	        this.primary = source["primary"];
+	        this.comment = source["comment"];
 	    }
 	}
 	

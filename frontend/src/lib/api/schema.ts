@@ -2,10 +2,12 @@ import {
   ListDatabases, ListSchemas, ListTables, ListViews, DescribeTable,
   ListCharsets, ListCollations, GetCreateTableDDL, PreviewCreateTable,
   PreviewAlterTable, CreateDatabase, CreateTable, AlterTable,
+  PreviewDropTable, DropTable,
 } from '../../../wailsjs/go/http/SchemaAPI';
 import type {
   ApiResponse, DatabaseDTO, SchemaDTO, TableDTO, ViewDTO, TableDetailDTO,
   CharsetDTO, CollationDTO, CreateTableRequest, AlterTableRequest, CreateDatabaseRequest,
+  DropTableRequest,
 } from './types';
 
 function checkCode<T>(resp: ApiResponse<T>): T {
@@ -54,4 +56,10 @@ export const schemaApi = {
 
   alterTable: (req: AlterTableRequest) =>
     AlterTable(req as any).then(r => checkCode(r as unknown as ApiResponse<boolean>)),
+
+  previewDropTable: (req: DropTableRequest) =>
+    PreviewDropTable(req as any).then(r => checkCode(r as unknown as ApiResponse<string>)),
+
+  dropTable: (req: DropTableRequest) =>
+    DropTable(req as any).then(r => checkCode(r as unknown as ApiResponse<boolean>)),
 };

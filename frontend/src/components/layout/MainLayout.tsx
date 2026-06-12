@@ -7,6 +7,7 @@ import SqlWorkspace from '@/components/sql-editor/SqlWorkspace';
 import CreateDatabaseDialog from '@/components/object-designer/CreateDatabaseDialog';
 import TableDesignerDialog from '@/components/object-designer/TableDesignerDialog';
 import DDLViewerDialog from '@/components/object-designer/DDLViewerDialog';
+import DropTableConfirmDialog from '@/components/object-designer/DropTableConfirmDialog';
 
 const MainLayout: React.FC = () => {
   const fetchConnections = useConnectionStore(s => s.fetchConnections);
@@ -50,6 +51,7 @@ const MainLayout: React.FC = () => {
       <CreateDatabaseDialog />
       <TableDesignerDialog />
       <DDLViewerDialog />
+      <DropTableConfirmDialog />
     </div>
   );
 };

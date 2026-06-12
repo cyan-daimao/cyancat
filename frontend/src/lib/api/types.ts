@@ -167,6 +167,7 @@ export interface IndexDTO {
   columns: string[];
   unique: boolean;
   primary: boolean;
+  comment: string;
 }
 
 export interface ForeignKeyDTO {
@@ -262,6 +263,7 @@ export interface AlterTableRequest {
   renameColumns: ColumnRenameDTO[];
   modifyColumns: ColumnSpecDTO[];
   addIndexes: IndexSpecDTO[];
+  modifyIndexes: IndexSpecDTO[];
   dropIndexes: string[];
   addForeignKeys: ForeignKeySpecDTO[];
   dropForeignKeys: string[];
@@ -269,4 +271,11 @@ export interface AlterTableRequest {
   charset: string;
   collation: string;
   comment: string;
+}
+
+export interface DropTableRequest {
+  connID: number;
+  database: string;
+  schema: string;
+  name: string;
 }

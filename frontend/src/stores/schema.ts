@@ -141,6 +141,8 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
                 database,
                 schema,
                 tableName: table,
+                columnName: c.name,
+                isPrimary: !!c.isPrimary,
                 loaded: true,
               }));
 

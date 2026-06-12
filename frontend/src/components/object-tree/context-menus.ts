@@ -76,6 +76,8 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
     { label: '复制限定表名', action: 'copy-full-name', icon: 'Copy' },
     SEP,
     { label: '刷新', action: 'refresh', icon: 'RefreshCw' },
+    SEP,
+    { label: '删除表', action: 'drop-table', icon: 'Trash2', danger: true },
   ],
 
   // ---- 字段节点 ----

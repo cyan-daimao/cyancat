@@ -53,3 +53,11 @@ export function PreviewAlterTable(arg1) {
 export function PreviewCreateTable(arg1) {
   return window['go']['http']['SchemaAPI']['PreviewCreateTable'](arg1);
 }
+
+export function PreviewDropTable(arg1) {
+  return window['go']['http']['SchemaAPI']['PreviewDropTable'](arg1);
+}
+
+export function DropTable(arg1) {
+  return window['go']['http']['SchemaAPI']['DropTable'](arg1);
+}

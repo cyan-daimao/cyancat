@@ -138,6 +138,8 @@ type AlterTableSpec struct {
 	AddIndexes []IndexSpec
 	// DropIndexes 删除索引
 	DropIndexes []string
+	// ModifyIndexes 修改索引（DROP + ADD，MySQL 不支持 ALTER INDEX COMMENT）
+	ModifyIndexes []IndexSpec
 	// AddForeignKeys 新增外键
 	AddForeignKeys []ForeignKeySpec
 	// DropForeignKeys 删除外键
