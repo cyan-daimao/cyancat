@@ -164,6 +164,15 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         await copyText(sql, 'SELECT SQL 已复制');
         return;
       }
+      case 'drop-table': {
+        openDropTableConfirm({
+          connID: node.connID,
+          database: node.database!,
+          schema: node.schema || node.database!,
+          tableName: node.tableName!,
+        });
+        return;
+      }
 
       // ---- 视图 ----
       case 'open-view': {

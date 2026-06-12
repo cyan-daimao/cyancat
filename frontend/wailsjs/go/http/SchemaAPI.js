@@ -18,6 +18,10 @@ export function DescribeTable(arg1, arg2, arg3, arg4) {
   return window['go']['http']['SchemaAPI']['DescribeTable'](arg1, arg2, arg3, arg4);
 }
 
+export function DropTable(arg1) {
+  return window['go']['http']['SchemaAPI']['DropTable'](arg1);
+}
+
 export function GetCreateTableDDL(arg1) {
   return window['go']['http']['SchemaAPI']['GetCreateTableDDL'](arg1);
 }
@@ -56,8 +60,4 @@ export function PreviewCreateTable(arg1) {
 
 export function PreviewDropTable(arg1) {
   return window['go']['http']['SchemaAPI']['PreviewDropTable'](arg1);
-}
-
-export function DropTable(arg1) {
-  return window['go']['http']['SchemaAPI']['DropTable'](arg1);
 }

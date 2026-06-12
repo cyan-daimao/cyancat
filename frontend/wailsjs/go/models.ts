@@ -930,6 +930,24 @@ export namespace dto {
 	        this.collation = source["collation"];
 	    }
 	}
+	export class DropTableRequest {
+	    connID: number;
+	    database: string;
+	    schema: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DropTableRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	    }
+	}
 	export class ExecuteQueryRequest {
 	    connID: number;
 	    sql: string;
@@ -977,24 +995,6 @@ export namespace dto {
 	    }
 	}
 	
-	export class DropTableRequest {
-	    connID: number;
-	    database: string;
-	    schema: string;
-	    name: string;
-
-	    static createFrom(source: any = {}) {
-	        return new DropTableRequest(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ("string" === typeof source) source = JSON.parse(source);
-	        this.connID = source["connID"];
-	        this.database = source["database"];
-	        this.schema = source["schema"];
-	        this.name = source["name"];
-	    }
-	}
 	export class GetCreateTableDDLRequest {
 	    connID: number;
 	    database: string;
@@ -1019,11 +1019,11 @@ export namespace dto {
 	    unique: boolean;
 	    primary: boolean;
 	    comment: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new IndexDTO(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
