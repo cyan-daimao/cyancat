@@ -126,11 +126,11 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         return;
       }
       case 'open-table': {
-        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 1000;`;
+        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 500;`;
         await execute({
           connID: node.connID,
           sql,
-          maxRows: 1000,
+          maxRows: 500,
           database: node.database,
           schema: node.schema,
         });
@@ -176,11 +176,11 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
 
       // ---- 视图 ----
       case 'open-view': {
-        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 1000;`;
+        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 500;`;
         await execute({
           connID: node.connID,
           sql,
-          maxRows: 1000,
+          maxRows: 500,
           database: node.database,
           schema: node.schema,
         });

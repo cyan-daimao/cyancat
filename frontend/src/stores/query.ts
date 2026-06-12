@@ -17,6 +17,8 @@ interface QueryState {
   setActiveResult: (index: number) => void;
   addEmptyResult: () => void;
   closeResult: (index: number) => void;
+  closeOtherResults: (keepIndex: number) => void;
+  closeAllResults: () => void;
   fetchHistory: (connID: number) => Promise<void>;
 }
 
@@ -60,6 +62,13 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const activeResultIndex = Math.min(state.activeResultIndex, Math.max(0, results.length - 1));
     return { results, activeResultIndex };
   }),
+
+  closeOtherResults: (keepIndex) => set(state => {
+    const results = [state.results[keepIndex]].filter(Boolean);
+    return { results, activeResultIndex: 0 };
+  }),
+
+  closeAllResults: () => set({ results: [], activeResultIndex: 0 }),
 
   fetchHistory: async (connID) => {
     set({ historyLoading: true });

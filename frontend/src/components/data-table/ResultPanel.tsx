@@ -1,7 +1,8 @@
 import React from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
-import { Download, Copy, FileText, Clipboard, Hash } from 'lucide-react';
+import { Download, Copy, FileText, Clipboard, Hash, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { QueryResultDTO } from '@/lib/api/types';
 import { toast } from '@/components/ui/use-toast';
 import {
@@ -34,11 +35,27 @@ const toSqlLiteral = (v: any): string => {
   return `'${s}'`;
 };
 
+const PAGE_SIZE_OPTIONS = [50, 100, 500];
+
 const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
   const parentRef = React.useRef<HTMLDivElement>(null);
 
   const cols = result.columns ?? [];
   const rows = result.rows ?? [];
+
+  // 分页状态
+  const [pageSize, setPageSize] = React.useState(50);
+  const [currentPage, setCurrentPage] = React.useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  // 当数据变化时修正页码
+  React.useEffect(() => {
+    setCurrentPage(p => Math.min(p, totalPages));
+  }, [totalPages]);
+
+  const offset = (currentPage - 1) * pageSize;
+  const pagedRows = rows.slice(offset, offset + pageSize);
+  const showPagination = rows.length > PAGE_SIZE_OPTIONS[0];
 
   // 从全局 store 推断表名（INSERT SQL 用），若未传 prop
   const selectedNode = useSchemaStore(s => s.selectedNode);
@@ -48,7 +65,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     'table_name';
 
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: pagedRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 28,
     overscan: 20,
@@ -87,18 +104,18 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
   };
 
   const copyCell = (rowIdx: number, colIdx: number) => {
-    const v = rows[rowIdx]?.[colIdx];
+    const v = pagedRows[rowIdx]?.[colIdx];
     copyText(formatValue(v));
   };
 
   const copyRowTSV = (rowIdx: number) => {
-    const row = rows[rowIdx];
+    const row = pagedRows[rowIdx];
     if (!row) return;
     copyText(row.map(formatValue).join('\t'));
   };
 
   const copyRowInsert = (rowIdx: number) => {
-    const row = rows[rowIdx];
+    const row = pagedRows[rowIdx];
     if (!row) return;
     const colList = cols.map(c => `\`${c.name}\``).join(', ');
     const valList = row.map(toSqlLiteral).join(', ');
@@ -124,6 +141,41 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
       } catch {}
     }
     return <span className="truncate">{str}</span>;
+  };
+
+  // 生成分页页码按钮
+  const renderPageButtons = () => {
+    const buttons: (number | 'ellipsis')[] = [];
+    const maxVisible = 5;
+
+    if (totalPages <= maxVisible + 2) {
+      // 全部显示
+      for (let i = 1; i <= totalPages; i++) buttons.push(i);
+    } else {
+      buttons.push(1);
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      if (start > 2) buttons.push('ellipsis');
+      for (let i = start; i <= end; i++) buttons.push(i);
+      if (end < totalPages - 1) buttons.push('ellipsis');
+      buttons.push(totalPages);
+    }
+
+    return buttons.map((p, i) =>
+      p === 'ellipsis' ? (
+        <span key={`e${i}`} className="px-1 text-xs text-muted-foreground">...</span>
+      ) : (
+        <Button
+          key={p}
+          variant={p === currentPage ? 'default' : 'ghost'}
+          size="sm"
+          className="h-6 w-6 p-0 text-xs"
+          onClick={() => setCurrentPage(p)}
+        >
+          {p}
+        </Button>
+      )
+    );
   };
 
   return (
@@ -171,7 +223,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
           <tbody>
             {virtualizer.getVirtualItems().map(virtualRow => {
               const rowIdx = virtualRow.index;
-              const row = rows[rowIdx];
+              const row = pagedRows[rowIdx];
               return (
                 <ContextMenu key={rowIdx}>
                   <ContextMenuTrigger asChild>
@@ -179,7 +231,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
                       className="border-b border-border/50 hover:bg-accent/30"
                       style={{ height: virtualRow.size }}
                     >
-                      <td className="px-2 py-0.5 text-muted-foreground">{rowIdx + 1}</td>
+                      <td className="px-2 py-0.5 text-muted-foreground">{offset + rowIdx + 1}</td>
                       {row?.map((cell, ci) => (
                         <ContextMenu key={ci}>
                           <ContextMenuTrigger asChild>
@@ -220,6 +272,44 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
           </tbody>
         </table>
       </div>
+
+      {/* 分页栏 */}
+      {showPagination && (
+        <div className="flex items-center gap-2 px-2 py-1 border-t border-border shrink-0 text-xs text-muted-foreground">
+          {/* 左侧：总行数 + 每页行数 */}
+          <span>共 {rows.length} 行</span>
+          <span>·</span>
+          <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setCurrentPage(1); }}>
+            <SelectTrigger className="h-6 w-[70px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map(s => (
+                <SelectItem key={s} value={String(s)}>{s} 行/页</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex-1" />
+
+          {/* 右侧：翻页按钮 */}
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+            <ChevronsLeft className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+            <ChevronLeft className="h-3 w-3" />
+          </Button>
+
+          {renderPageButtons()}
+
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+            <ChevronRight className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
+            <ChevronsRight className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

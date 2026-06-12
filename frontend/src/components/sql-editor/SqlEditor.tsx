@@ -68,7 +68,7 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema }) => {
     await execute({
       connID: ctx.connID,
       sql: sqlToRun,
-      maxRows: 1000,
+      maxRows: 500,
       database: ctx.database,
       schema: ctx.schema,
     });
