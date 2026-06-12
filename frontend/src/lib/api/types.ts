@@ -90,6 +90,16 @@ export interface ColumnDTO {
   databaseType: string;
   nullable: boolean;
   isPrimary: boolean;
+  autoIncrement: boolean;
+  unsigned: boolean;
+  defaultValue: string | null;
+  comment: string;
+  extra: string;
+  ordinalPosition: number;
+  typeLength: number | null;
+  precision: number | null;
+  scale: number | null;
+  collation: string;
 }
 
 export interface ExecuteQueryRequest {
@@ -167,4 +177,96 @@ export interface ForeignKeyDTO {
   referencedColumns: string[];
   onUpdate: string;
   onDelete: string;
+}
+
+// DDL DTOs
+export interface CharsetDTO {
+  name: string;
+  description: string;
+  defaultCollation: string;
+}
+
+export interface CollationDTO {
+  name: string;
+  charset: string;
+  isDefault: boolean;
+}
+
+export interface ColumnSpecDTO {
+  name: string;
+  dataType: string;
+  typeLength: number | null;
+  precision: number | null;
+  scale: number | null;
+  nullable: boolean;
+  autoIncrement: boolean;
+  unsigned: boolean;
+  defaultValue: string | null;
+  comment: string;
+  collation: string;
+  first: boolean;
+  after: string;
+}
+
+export interface IndexSpecDTO {
+  name: string;
+  type: string;
+  columns: string[];
+  comment: string;
+}
+
+export interface ForeignKeySpecDTO {
+  name: string;
+  columns: string[];
+  referencedSchema: string;
+  referencedTable: string;
+  referencedColumns: string[];
+  onDelete: string;
+  onUpdate: string;
+}
+
+export interface ColumnRenameDTO {
+  old: string;
+  new: string;
+}
+
+export interface CreateDatabaseRequest {
+  connID: number;
+  name: string;
+  charset: string;
+  collation: string;
+}
+
+export interface CreateTableRequest {
+  connID: number;
+  database: string;
+  schema: string;
+  name: string;
+  columns: ColumnSpecDTO[];
+  primaryKey: string[];
+  indexes: IndexSpecDTO[];
+  foreignKeys: ForeignKeySpecDTO[];
+  engine: string;
+  charset: string;
+  collation: string;
+  comment: string;
+}
+
+export interface AlterTableRequest {
+  connID: number;
+  database: string;
+  schema: string;
+  name: string;
+  addColumns: ColumnSpecDTO[];
+  dropColumns: string[];
+  renameColumns: ColumnRenameDTO[];
+  modifyColumns: ColumnSpecDTO[];
+  addIndexes: IndexSpecDTO[];
+  dropIndexes: string[];
+  addForeignKeys: ForeignKeySpecDTO[];
+  dropForeignKeys: string[];
+  engine: string;
+  charset: string;
+  collation: string;
+  comment: string;
 }

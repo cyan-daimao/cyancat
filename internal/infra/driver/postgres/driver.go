@@ -127,6 +127,11 @@ func (c *Conn) Inspector() driver.Inspector {
 	return newInspector(c)
 }
 
+// DDL 返回 DDL 生成器
+func (c *Conn) DDL() driver.DDLGenerator {
+	return newDDLGenerator(c)
+}
+
 // ServerVersion 返回 PG 版本
 func (c *Conn) ServerVersion(ctx context.Context) (string, error) {
 	var v string

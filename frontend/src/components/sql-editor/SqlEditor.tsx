@@ -11,6 +11,31 @@ interface SqlEditorProps {
   schema?: string;
 }
 
+/** 基础 SQL 格式化：分号后换行、关键字大写、去除多余空行 */
+function formatSql(sql: string): string {
+  const KEYWORDS = [
+    'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'IS', 'NULL',
+    'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+    'CREATE', 'TABLE', 'DROP', 'ALTER', 'INDEX', 'VIEW', 'DATABASE',
+    'JOIN', 'INNER', 'LEFT', 'RIGHT', 'OUTER', 'ON', 'AS',
+    'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'DISTINCT',
+    'UNION', 'ALL', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+    'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'DEFAULT', 'CONSTRAINT',
+    'IF', 'EXISTS', 'BETWEEN',
+  ];
+  let result = sql;
+  // 关键字大写（仅边界单词）
+  KEYWORDS.forEach(kw => {
+    const re = new RegExp(`\\b${kw}\\b`, 'gi');
+    result = result.replace(re, kw);
+  });
+  // 分号后换行
+  result = result.replace(/;\s*/g, ';\n');
+  // 去除连续多余空行
+  result = result.replace(/\n{3,}/g, '\n\n');
+  return result.trim() + (result.trim().endsWith(';') ? '' : '');
+}
+
 const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema }) => {
   const [sql, setSql] = React.useState('SELECT 1;');
   const { execute, executing } = useQueryStore();
@@ -62,6 +87,47 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema }) => {
       monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
       () => handleExecuteRef.current()
     );
+
+    // 运行选中：右键菜单
+    editor.addAction({
+      id: 'cyancat.runSelection',
+      label: '运行选中 SQL',
+      contextMenuGroupId: 'cyancat',
+      contextMenuOrder: 1,
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      run: () => handleExecuteRef.current(),
+    });
+
+    // 格式化 SQL（基础版：将分号后换行，关键字大写）
+    editor.addAction({
+      id: 'cyancat.formatSql',
+      label: '格式化 SQL',
+      contextMenuGroupId: 'cyancat',
+      contextMenuOrder: 2,
+      keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+      run: (ed: any) => {
+        const model = ed.getModel();
+        if (!model) return;
+        const original = model.getValue() as string;
+        const formatted = formatSql(original);
+        ed.executeEdits('cyancat-format', [{
+          range: model.getFullModelRange(),
+          text: formatted,
+        }]);
+      },
+    });
+
+    // 注释/取消注释选中行
+    editor.addAction({
+      id: 'cyancat.toggleComment',
+      label: '注释/取消注释',
+      contextMenuGroupId: 'cyancat',
+      contextMenuOrder: 3,
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash],
+      run: (ed: any) => {
+        ed.getAction('editor.action.commentLine')?.run();
+      },
+    });
   };
 
   return (

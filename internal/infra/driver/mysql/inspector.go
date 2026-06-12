@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"cyancat/internal/infra/driver"
 )
@@ -115,17 +116,31 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 		Database: target,
 	}
 
-	// 表注释
-	if err := i.conn.db.QueryRowContext(ctx,
-		`SELECT IFNULL(TABLE_COMMENT, '') FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+	// 表信息（注释+引擎+字符集+排序规则）
+	row := i.conn.db.QueryRowContext(ctx,
+		`SELECT IFNULL(TABLE_COMMENT, ''), IFNULL(ENGINE, ''), IFNULL(TABLE_COLLATION, '')
+			FROM INFORMATION_SCHEMA.TABLES
+			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
 		target, table,
-	).Scan(&detail.Comment); err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("mysql/inspector: describe comment: %w", err)
+	)
+	var engine, collation string
+	if err := row.Scan(&detail.Comment, &engine, &collation); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("mysql/inspector: describe table info: %w", err)
 	}
+	_ = engine
+	_ = collation
 
-	// 列定义
+	// 列定义（带所有扩展字段）
 	colRows, err := i.conn.db.QueryContext(ctx,
-		`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY
+		`SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY,
+				IFNULL(CHARACTER_MAXIMUM_LENGTH, 0),
+				IFNULL(NUMERIC_PRECISION, 0),
+				IFNULL(NUMERIC_SCALE, 0),
+				COLUMN_DEFAULT,
+				IFNULL(COLUMN_COMMENT, ''),
+				EXTRA,
+				ORDINAL_POSITION,
+				IFNULL(COLLATION_NAME, '')
 			FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 			ORDER BY ORDINAL_POSITION`,
@@ -139,11 +154,36 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 	for colRows.Next() {
 		var col driver.Column
 		var nullable, key string
-		if err := colRows.Scan(&col.Name, &col.DatabaseType, &nullable, &key); err != nil {
+		var charLen, numericPrec, numericScale sql.NullInt64
+		var colDefault sql.NullString
+		if err := colRows.Scan(
+			&col.Name, &col.DatabaseType, &nullable, &key,
+			&charLen, &numericPrec, &numericScale,
+			&colDefault, &col.Comment, &col.Extra,
+			&col.OrdinalPosition, &col.Collation,
+		); err != nil {
 			return nil, err
 		}
 		col.Nullable = nullable == "YES"
 		col.IsPrimary = key == "PRI"
+		col.AutoIncrement = strings.Contains(col.Extra, "auto_increment")
+		col.Unsigned = strings.Contains(col.DatabaseType, "unsigned")
+		if colDefault.Valid {
+			v := colDefault.String
+			col.DefaultValue = &v
+		}
+		if charLen.Valid {
+			v := int(charLen.Int64)
+			col.TypeLength = &v
+		}
+		if numericPrec.Valid && numericPrec.Int64 > 0 {
+			v := int(numericPrec.Int64)
+			col.Precision = &v
+		}
+		if numericScale.Valid && numericScale.Int64 > 0 {
+			v := int(numericScale.Int64)
+			col.Scale = &v
+		}
 		detail.Columns = append(detail.Columns, col)
 	}
 
@@ -255,6 +295,58 @@ func (i *inspector) ListForeignKeys(ctx context.Context, database, schema, table
 		result = append(result, *fkMap[name])
 	}
 	return result, nil
+}
+
+// ListCharsets 列出可用字符集
+func (i *inspector) ListCharsets(ctx context.Context) ([]driver.Charset, error) {
+	rows, err := i.conn.db.QueryContext(ctx,
+		`SELECT CHARACTER_SET_NAME, IFNULL(DESCRIPTION, ''), IFNULL(DEFAULT_COLLATE_NAME, '')
+			FROM INFORMATION_SCHEMA.CHARACTER_SETS
+			ORDER BY CHARACTER_SET_NAME`)
+	if err != nil {
+		return nil, fmt.Errorf("mysql/inspector: list charsets: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]driver.Charset, 0)
+	for rows.Next() {
+		var cs driver.Charset
+		if err := rows.Scan(&cs.Name, &cs.Description, &cs.DefaultCollation); err != nil {
+			return nil, err
+		}
+		result = append(result, cs)
+	}
+	return result, rows.Err()
+}
+
+// ListCollations 列出指定字符集下的排序规则
+func (i *inspector) ListCollations(ctx context.Context, charset string) ([]driver.Collation, error) {
+	q := `SELECT COLLATION_NAME, CHARACTER_SET_NAME, IS_DEFAULT
+		FROM INFORMATION_SCHEMA.COLLATIONS`
+	args := []any{}
+	if charset != "" {
+		q += " WHERE CHARACTER_SET_NAME = ?"
+		args = append(args, charset)
+	}
+	q += " ORDER BY COLLATION_NAME"
+
+	rows, err := i.conn.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mysql/inspector: list collations: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]driver.Collation, 0)
+	for rows.Next() {
+		var c driver.Collation
+		var isDefault string
+		if err := rows.Scan(&c.Name, &c.Charset, &isDefault); err != nil {
+			return nil, err
+		}
+		c.IsDefault = isDefault == "Yes"
+		result = append(result, c)
+	}
+	return result, rows.Err()
 }
 
 // pickSchema 优先使用 schema，否则用 database（MySQL 两者等价）

@@ -76,6 +76,8 @@ type Conn interface {
 	Stream(ctx context.Context, sql string, args ...any) (RowStream, error)
 	// Inspector 元数据查询器
 	Inspector() Inspector
+	// DDL 返回方言专属的 DDL 生成器
+	DDL() DDLGenerator
 	// ServerVersion 返回数据库服务端版本字符串
 	ServerVersion(ctx context.Context) (string, error)
 	// Close 关闭连接
@@ -92,6 +94,26 @@ type Column struct {
 	Nullable bool
 	// IsPrimary 是否主键（仅在 DescribeTable 等元数据查询时填充）
 	IsPrimary bool
+	// AutoIncrement 是否自增（MySQL: auto_increment；PG: identity/serial）
+	AutoIncrement bool
+	// Unsigned 是否无符号（MySQL 专有）
+	Unsigned bool
+	// DefaultValue 默认值字符串（NULL 用 nil 区分「无默认」与「DEFAULT NULL」）
+	DefaultValue *string
+	// Comment 列注释
+	Comment string
+	// Extra 额外修饰符（MySQL EXTRA 列；PG 暂未使用）
+	Extra string
+	// OrdinalPosition 列序号
+	OrdinalPosition int
+	// TypeLength 字符/字节最大长度（如 varchar 长度）
+	TypeLength *int
+	// Precision 数字精度（decimal 总位数）
+	Precision *int
+	// Scale 数字小数位
+	Scale *int
+	// Collation 列级排序规则
+	Collation string
 }
 
 // Result 同步执行结果（适合小结果集和 DML/DDL）
@@ -146,6 +168,30 @@ type Inspector interface {
 	ListIndexes(ctx context.Context, database, schema, table string) ([]Index, error)
 	// ListForeignKeys 列出表的外键
 	ListForeignKeys(ctx context.Context, database, schema, table string) ([]ForeignKey, error)
+	// ListCharsets 列出可用字符集（用于新建数据库/表时选择）
+	ListCharsets(ctx context.Context) ([]Charset, error)
+	// ListCollations 列出指定字符集下的排序规则（charset 为空时列出全部）
+	ListCollations(ctx context.Context, charset string) ([]Collation, error)
+}
+
+// Charset 字符集元数据
+type Charset struct {
+	// Name 字符集名（utf8mb4 / UTF8 ...）
+	Name string
+	// Description 描述
+	Description string
+	// DefaultCollation 默认排序规则
+	DefaultCollation string
+}
+
+// Collation 排序规则元数据
+type Collation struct {
+	// Name 排序规则名（utf8mb4_general_ci）
+	Name string
+	// Charset 所属字符集
+	Charset string
+	// IsDefault 是否字符集默认
+	IsDefault bool
 }
 
 // Database 数据库元数据

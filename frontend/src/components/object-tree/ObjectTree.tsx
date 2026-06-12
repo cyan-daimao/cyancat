@@ -2,8 +2,12 @@ import React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConnectionStore } from '@/stores/connection';
 import { useSchemaStore } from '@/stores/schema';
-import { ChevronRight, ChevronDown, Database, Server, Table, Eye, Columns, Loader2 } from 'lucide-react';
+import {
+  ChevronRight, ChevronDown, Database, Server, Table, Eye, Columns,
+  FolderOpen, Key, Link2, Loader2, FileType,
+} from 'lucide-react';
 import type { TreeNode } from '@/stores/schema';
+import ObjectTreeContextMenu from './ObjectTreeContextMenu';
 
 const iconMap: Record<string, React.ReactNode> = {
   connection: <Server className="h-4 w-4 text-blue-500" />,
@@ -11,6 +15,11 @@ const iconMap: Record<string, React.ReactNode> = {
   table: <Table className="h-4 w-4 text-green-600" />,
   view: <Eye className="h-4 w-4 text-purple-500" />,
   column: <Columns className="h-4 w-4 text-muted-foreground" />,
+  'columns-folder': <FolderOpen className="h-4 w-4 text-blue-400" />,
+  'indexes-folder': <FolderOpen className="h-4 w-4 text-orange-400" />,
+  'foreign-keys-folder': <FolderOpen className="h-4 w-4 text-pink-400" />,
+  index: <Key className="h-4 w-4 text-orange-500" />,
+  foreignKey: <Link2 className="h-4 w-4 text-pink-500" />,
 };
 
 const ObjectTree: React.FC = () => {
@@ -117,48 +126,76 @@ const ObjectTree: React.FC = () => {
     }
   };
 
+  /** 渲染节点附加标签（如字段类型、索引类型、外键引用） */
+  const renderNodeBadge = (node: TreeNode): React.ReactNode | null => {
+    // 字段节点：从 label 中提取类型（已由 schema store 添加）
+    if (node.type === 'column') {
+      // label 格式为 "colName (type)"，类型已包含在 label 中
+      return null;
+    }
+    if (node.type === 'index') {
+      return (
+        <span className="ml-auto text-[10px] px-1 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 leading-tight">
+          idx
+        </span>
+      );
+    }
+    if (node.type === 'foreignKey') {
+      // FK 节点无额外标签，引用信息在 tooltip 中展示
+      return null;
+    }
+    return null;
+  };
+
   const renderNode = (node: TreeNode, depth: number = 0) => {
     const expanded = expandedKeys.has(node.key);
-    const isLeaf = node.type === 'column' || node.type === 'view';
+    const isLeaf = node.type === 'column' || node.type === 'view' || node.type === 'index' || node.type === 'foreignKey';
     const hasChildren = !isLeaf;
     const isConn = node.type === 'connection';
     const isLoading = loadingKeys.has(node.key);
     const selected = selectedNode?.key === node.key;
 
+    const nodeElement = (
+      <div
+        className={`group flex items-center gap-1 px-1 py-0.5 cursor-pointer hover:bg-accent rounded-sm text-sm ${
+          selected ? 'bg-accent text-accent-foreground' : ''
+        }`}
+        style={{ paddingLeft: `${depth * 16 + 4}px` }}
+        onClick={() => handleNodeClick(node, hasChildren)}
+        onDoubleClick={isConn ? (e) => handleConnectionDoubleClick(e, node) : undefined}
+        title={isConn ? '点击展开/收起，双击关闭连接' : undefined}
+      >
+        {hasChildren ? (
+          <span onClick={(e) => handleChevronClick(e, node)} className="shrink-0">
+            {isLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : expanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+          </span>
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        {iconMap[node.type] || <FileType className="h-4 w-4" />}
+        <span className="truncate">{node.label}</span>
+        {renderNodeBadge(node)}
+        {isConn && (
+          <span
+            className={`ml-auto h-2 w-2 rounded-full ${
+              openConnIds.has(node.connID) ? 'bg-green-500' : 'bg-muted-foreground/30'
+            }`}
+          />
+        )}
+      </div>
+    );
+
     return (
       <div key={node.key}>
-        <div
-          className={`group flex items-center gap-1 px-1 py-0.5 cursor-pointer hover:bg-accent rounded-sm text-sm ${
-            selected ? 'bg-accent text-accent-foreground' : ''
-          }`}
-          style={{ paddingLeft: `${depth * 16 + 4}px` }}
-          onClick={() => handleNodeClick(node, hasChildren)}
-          onDoubleClick={isConn ? (e) => handleConnectionDoubleClick(e, node) : undefined}
-          title={isConn ? '点击展开/收起，双击关闭连接' : undefined}
-        >
-          {hasChildren ? (
-            <span onClick={(e) => handleChevronClick(e, node)} className="shrink-0">
-              {isLoading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : expanded ? (
-                <ChevronDown className="h-3 w-3" />
-              ) : (
-                <ChevronRight className="h-3 w-3" />
-              )}
-            </span>
-          ) : (
-            <span className="w-3 shrink-0" />
-          )}
-          {iconMap[node.type] || <Database className="h-4 w-4" />}
-          <span className="truncate">{node.label}</span>
-          {isConn && (
-            <span
-              className={`ml-auto h-2 w-2 rounded-full ${
-                openConnIds.has(node.connID) ? 'bg-green-500' : 'bg-muted-foreground/30'
-              }`}
-            />
-          )}
-        </div>
+        <ObjectTreeContextMenu node={node}>
+          {nodeElement}
+        </ObjectTreeContextMenu>
         {expanded && node.children?.map((child) => renderNode(child, depth + 1))}
         {expanded && hasChildren && (!node.children || node.children.length === 0) && !isLoading && node.loaded && (
           <div

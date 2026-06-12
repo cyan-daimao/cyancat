@@ -278,6 +278,74 @@ export namespace api {
 		    return a;
 		}
 	}
+	export class Response____cyancat_internal_adapter_dto_CharsetDTO_ {
+	    code: number;
+	    message: string;
+	    data: dto.CharsetDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Response____cyancat_internal_adapter_dto_CharsetDTO_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.message = source["message"];
+	        this.data = this.convertValues(source["data"], dto.CharsetDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Response____cyancat_internal_adapter_dto_CollationDTO_ {
+	    code: number;
+	    message: string;
+	    data: dto.CollationDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Response____cyancat_internal_adapter_dto_CollationDTO_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.message = source["message"];
+	        this.data = this.convertValues(source["data"], dto.CollationDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Response____cyancat_internal_adapter_dto_ConnectionDTO_ {
 	    code: number;
 	    message: string;
@@ -464,11 +532,211 @@ export namespace api {
 	        this.data = source["data"];
 	    }
 	}
+	export class Response_string_ {
+	    code: number;
+	    message: string;
+	    data: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Response_string_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.message = source["message"];
+	        this.data = source["data"];
+	    }
+	}
 
 }
 
 export namespace dto {
 	
+	export class ForeignKeySpecDTO {
+	    name: string;
+	    columns: string[];
+	    referencedSchema: string;
+	    referencedTable: string;
+	    referencedColumns: string[];
+	    onDelete: string;
+	    onUpdate: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ForeignKeySpecDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.columns = source["columns"];
+	        this.referencedSchema = source["referencedSchema"];
+	        this.referencedTable = source["referencedTable"];
+	        this.referencedColumns = source["referencedColumns"];
+	        this.onDelete = source["onDelete"];
+	        this.onUpdate = source["onUpdate"];
+	    }
+	}
+	export class IndexSpecDTO {
+	    name: string;
+	    type: string;
+	    columns: string[];
+	    comment: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new IndexSpecDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.columns = source["columns"];
+	        this.comment = source["comment"];
+	    }
+	}
+	export class ColumnRenameDTO {
+	    old: string;
+	    new: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ColumnRenameDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.old = source["old"];
+	        this.new = source["new"];
+	    }
+	}
+	export class ColumnSpecDTO {
+	    name: string;
+	    dataType: string;
+	    typeLength?: number;
+	    precision?: number;
+	    scale?: number;
+	    nullable: boolean;
+	    autoIncrement: boolean;
+	    unsigned: boolean;
+	    defaultValue?: string;
+	    comment: string;
+	    collation: string;
+	    first: boolean;
+	    after: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ColumnSpecDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.dataType = source["dataType"];
+	        this.typeLength = source["typeLength"];
+	        this.precision = source["precision"];
+	        this.scale = source["scale"];
+	        this.nullable = source["nullable"];
+	        this.autoIncrement = source["autoIncrement"];
+	        this.unsigned = source["unsigned"];
+	        this.defaultValue = source["defaultValue"];
+	        this.comment = source["comment"];
+	        this.collation = source["collation"];
+	        this.first = source["first"];
+	        this.after = source["after"];
+	    }
+	}
+	export class AlterTableRequest {
+	    connID: number;
+	    database: string;
+	    schema: string;
+	    name: string;
+	    addColumns: ColumnSpecDTO[];
+	    dropColumns: string[];
+	    renameColumns: ColumnRenameDTO[];
+	    modifyColumns: ColumnSpecDTO[];
+	    addIndexes: IndexSpecDTO[];
+	    dropIndexes: string[];
+	    addForeignKeys: ForeignKeySpecDTO[];
+	    dropForeignKeys: string[];
+	    engine: string;
+	    charset: string;
+	    collation: string;
+	    comment: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlterTableRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	        this.addColumns = this.convertValues(source["addColumns"], ColumnSpecDTO);
+	        this.dropColumns = source["dropColumns"];
+	        this.renameColumns = this.convertValues(source["renameColumns"], ColumnRenameDTO);
+	        this.modifyColumns = this.convertValues(source["modifyColumns"], ColumnSpecDTO);
+	        this.addIndexes = this.convertValues(source["addIndexes"], IndexSpecDTO);
+	        this.dropIndexes = source["dropIndexes"];
+	        this.addForeignKeys = this.convertValues(source["addForeignKeys"], ForeignKeySpecDTO);
+	        this.dropForeignKeys = source["dropForeignKeys"];
+	        this.engine = source["engine"];
+	        this.charset = source["charset"];
+	        this.collation = source["collation"];
+	        this.comment = source["comment"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CharsetDTO {
+	    name: string;
+	    description: string;
+	    defaultCollation: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CharsetDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.defaultCollation = source["defaultCollation"];
+	    }
+	}
+	export class CollationDTO {
+	    name: string;
+	    charset: string;
+	    isDefault: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CollationDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.charset = source["charset"];
+	        this.isDefault = source["isDefault"];
+	    }
+	}
 	export class ColumnDTO {
 	    name: string;
 	    databaseType: string;
@@ -485,6 +753,8 @@ export namespace dto {
 	        this.nullable = source["nullable"];
 	    }
 	}
+	
+	
 	export class ConnectionDTO {
 	    id: number;
 	    name: string;
@@ -572,6 +842,76 @@ export namespace dto {
 	        this.color = source["color"];
 	    }
 	}
+	export class CreateDatabaseRequest {
+	    connID: number;
+	    name: string;
+	    charset: string;
+	    collation: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateDatabaseRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.name = source["name"];
+	        this.charset = source["charset"];
+	        this.collation = source["collation"];
+	    }
+	}
+	export class CreateTableRequest {
+	    connID: number;
+	    database: string;
+	    schema: string;
+	    name: string;
+	    columns: ColumnSpecDTO[];
+	    primaryKey: string[];
+	    indexes: IndexSpecDTO[];
+	    foreignKeys: ForeignKeySpecDTO[];
+	    engine: string;
+	    charset: string;
+	    collation: string;
+	    comment: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateTableRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	        this.columns = this.convertValues(source["columns"], ColumnSpecDTO);
+	        this.primaryKey = source["primaryKey"];
+	        this.indexes = this.convertValues(source["indexes"], IndexSpecDTO);
+	        this.foreignKeys = this.convertValues(source["foreignKeys"], ForeignKeySpecDTO);
+	        this.engine = source["engine"];
+	        this.charset = source["charset"];
+	        this.collation = source["collation"];
+	        this.comment = source["comment"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class DatabaseDTO {
 	    name: string;
 	    charset: string;
@@ -634,6 +974,25 @@ export namespace dto {
 	        this.onDelete = source["onDelete"];
 	    }
 	}
+	
+	export class GetCreateTableDDLRequest {
+	    connID: number;
+	    database: string;
+	    schema: string;
+	    table: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetCreateTableDDLRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.table = source["table"];
+	    }
+	}
 	export class IndexDTO {
 	    name: string;
 	    columns: string[];
@@ -650,6 +1009,33 @@ export namespace dto {
 	        this.columns = source["columns"];
 	        this.unique = source["unique"];
 	        this.primary = source["primary"];
+	    }
+	}
+	
+	export class ListCharsetsRequest {
+	    connID: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ListCharsetsRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	    }
+	}
+	export class ListCollationsRequest {
+	    connID: number;
+	    charset: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ListCollationsRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.charset = source["charset"];
 	    }
 	}
 	export class ListConnectionRequest {
@@ -802,6 +1188,16 @@ export namespace dto {
 	    databaseType: string;
 	    nullable: boolean;
 	    isPrimary: boolean;
+	    autoIncrement: boolean;
+	    unsigned: boolean;
+	    defaultValue?: string;
+	    comment: string;
+	    extra: string;
+	    ordinalPosition: number;
+	    typeLength?: number;
+	    precision?: number;
+	    scale?: number;
+	    collation: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SchemaColumnDTO(source);
@@ -813,6 +1209,16 @@ export namespace dto {
 	        this.databaseType = source["databaseType"];
 	        this.nullable = source["nullable"];
 	        this.isPrimary = source["isPrimary"];
+	        this.autoIncrement = source["autoIncrement"];
+	        this.unsigned = source["unsigned"];
+	        this.defaultValue = source["defaultValue"];
+	        this.comment = source["comment"];
+	        this.extra = source["extra"];
+	        this.ordinalPosition = source["ordinalPosition"];
+	        this.typeLength = source["typeLength"];
+	        this.precision = source["precision"];
+	        this.scale = source["scale"];
+	        this.collation = source["collation"];
 	    }
 	}
 	export class SchemaDTO {

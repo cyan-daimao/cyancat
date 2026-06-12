@@ -4,6 +4,9 @@ import { Database } from 'lucide-react';
 import { useConnectionStore } from '@/stores/connection';
 import ObjectTree from '@/components/object-tree/ObjectTree';
 import SqlWorkspace from '@/components/sql-editor/SqlWorkspace';
+import CreateDatabaseDialog from '@/components/object-designer/CreateDatabaseDialog';
+import TableDesignerDialog from '@/components/object-designer/TableDesignerDialog';
+import DDLViewerDialog from '@/components/object-designer/DDLViewerDialog';
 
 const MainLayout: React.FC = () => {
   const fetchConnections = useConnectionStore(s => s.fetchConnections);
@@ -42,6 +45,11 @@ const MainLayout: React.FC = () => {
         <Separator orientation="vertical" className="mx-2 h-3" />
         <span>就绪</span>
       </footer>
+
+      {/* 全局对话框（由 useDesignerStore 控制） */}
+      <CreateDatabaseDialog />
+      <TableDesignerDialog />
+      <DDLViewerDialog />
     </div>
   );
 };

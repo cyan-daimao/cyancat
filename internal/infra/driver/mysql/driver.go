@@ -66,6 +66,7 @@ func (d *Driver) Connect(ctx context.Context, cfg driver.ConnConfig) (driver.Con
 
 	conn := &Conn{db: db}
 	conn.inspector = newInspector(conn)
+	conn.ddl = newDDLGenerator(conn)
 	return conn, nil
 }
 
@@ -98,6 +99,7 @@ func buildDSN(cfg driver.ConnConfig) string {
 type Conn struct {
 	db        *sql.DB
 	inspector driver.Inspector
+	ddl       driver.DDLGenerator
 }
 
 // Ping 测试连接
@@ -113,6 +115,11 @@ func (c *Conn) Close() error {
 // Inspector 返回元数据查询器
 func (c *Conn) Inspector() driver.Inspector {
 	return c.inspector
+}
+
+// DDL 返回 DDL 生成器
+func (c *Conn) DDL() driver.DDLGenerator {
+	return c.ddl
 }
 
 // ServerVersion 返回 MySQL 服务端版本

@@ -48,6 +48,26 @@ type ColumnBO struct {
 	Nullable bool
 	// IsPrimary 是否主键
 	IsPrimary bool
+	// AutoIncrement 是否自增
+	AutoIncrement bool
+	// Unsigned 是否无符号（MySQL）
+	Unsigned bool
+	// DefaultValue 默认值
+	DefaultValue *string
+	// Comment 字段注释
+	Comment string
+	// Extra 额外修饰符（MySQL EXTRA）
+	Extra string
+	// OrdinalPosition 列序号
+	OrdinalPosition int
+	// TypeLength 字符/字节最大长度
+	TypeLength *int
+	// Precision 数字精度
+	Precision *int
+	// Scale 数字小数位
+	Scale *int
+	// Collation 列级排序规则
+	Collation string
 }
 
 // IndexBO 索引业务对象
@@ -96,4 +116,24 @@ type TableDetailBO struct {
 	Indexes []IndexBO
 	// ForeignKeys 外键列表
 	ForeignKeys []ForeignKeyBO
+}
+
+// CharsetBO 字符集业务对象
+type CharsetBO struct {
+	// Name 字符集名
+	Name string
+	// Description 描述
+	Description string
+	// DefaultCollation 默认排序规则
+	DefaultCollation string
+}
+
+// CollationBO 排序规则业务对象
+type CollationBO struct {
+	// Name 排序规则名
+	Name string
+	// Charset 所属字符集
+	Charset string
+	// IsDefault 是否字符集默认
+	IsDefault bool
 }

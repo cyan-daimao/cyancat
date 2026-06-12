@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/use-toast';
 export interface TreeNode {
   key: string;       // 唯一 key，如 "conn:1:db:mysql:table:users"
   label: string;
-  type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'column' | 'index' | 'folders';
+  type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'column' | 'index' | 'foreignKey' | 'columns-folder' | 'indexes-folder' | 'foreign-keys-folder';
   icon?: string;
   children?: TreeNode[];
   loaded?: boolean;  // 子节点是否已懒加载
@@ -15,6 +15,8 @@ export interface TreeNode {
   database?: string;
   schema?: string;
   tableName?: string;
+  columnName?: string;  // 字段节点：字段名（label 含类型后缀，此字段仅名称）
+  isPrimary?: boolean;  // 字段节点：是否为主键
 }
 
 interface SchemaState {
@@ -31,6 +33,14 @@ interface SchemaState {
   loadTableDetail: (connID: number, database: string, schema: string, table: string) => Promise<void>;
   toggleExpand: (key: string) => void;
   resetTree: (connID: number) => void;
+
+  // 缓存失效
+  invalidateDatabase: (connID: number, db: string) => Promise<void>;
+  invalidateTable: (connID: number, db: string, schema: string, table: string) => Promise<void>;
+
+  // 便利方法
+  refreshTree: (connID: number) => Promise<void>;
+  getConnIDForNode: (node: TreeNode) => number;
 }
 
 export const useSchemaStore = create<SchemaState>((set, get) => ({
@@ -117,14 +127,14 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
       const detail = await schemaApi.describeTable(connID, database, schema, table);
       set({ selectedTable: detail });
 
-      // 同时更新树节点的 children（columns）
+      // 同时更新树节点的 children（使用文件夹层级结构）
       set(state => {
         const trees = { ...state.trees };
         const updateChildren = (nodes: TreeNode[]): TreeNode[] =>
           nodes.map(n => {
             if (n.key === `conn:${connID}:db:${database}:schema:${schema}:table:${table}`) {
-              const colNodes: TreeNode[] = detail.columns.map(c => ({
-                key: `${n.key}:col:${c.name}`,
+              const colNodes: TreeNode[] = (detail.columns ?? []).map(c => ({
+                key: `${n.key}:folder:columns:col:${c.name}`,
                 label: `${c.name} (${c.databaseType})`,
                 type: 'column' as const,
                 connID,
@@ -133,7 +143,66 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
                 tableName: table,
                 loaded: true,
               }));
-              return { ...n, children: colNodes, loaded: true };
+
+              const idxNodes: TreeNode[] = (detail.indexes ?? []).map(idx => ({
+                key: `${n.key}:folder:indexes:idx:${idx.name}`,
+                label: idx.name,
+                type: 'index' as const,
+                connID,
+                database,
+                schema,
+                tableName: table,
+                loaded: true,
+              }));
+
+              const fkNodes: TreeNode[] = (detail.foreignKeys ?? []).map(fk => ({
+                key: `${n.key}:folder:foreign-keys:fk:${fk.name}`,
+                label: fk.name,
+                type: 'foreignKey' as const,
+                connID,
+                database,
+                schema,
+                tableName: table,
+                loaded: true,
+              }));
+
+              const folderChildren: TreeNode[] = [
+                {
+                  key: `${n.key}:folder:columns`,
+                  label: 'Columns',
+                  type: 'columns-folder' as const,
+                  connID,
+                  database,
+                  schema,
+                  tableName: table,
+                  loaded: true,
+                  children: colNodes,
+                },
+                {
+                  key: `${n.key}:folder:indexes`,
+                  label: 'Indexes',
+                  type: 'indexes-folder' as const,
+                  connID,
+                  database,
+                  schema,
+                  tableName: table,
+                  loaded: true,
+                  children: idxNodes,
+                },
+                {
+                  key: `${n.key}:folder:foreign-keys`,
+                  label: 'Foreign Keys',
+                  type: 'foreign-keys-folder' as const,
+                  connID,
+                  database,
+                  schema,
+                  tableName: table,
+                  loaded: true,
+                  children: fkNodes,
+                },
+              ];
+
+              return { ...n, children: folderChildren, loaded: true };
             }
             if (n.children) {
               return { ...n, children: updateChildren(n.children) };
@@ -161,4 +230,25 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
     const selectedTable = state.selectedNode?.connID === connID ? null : state.selectedTable;
     return { trees, selectedNode, selectedTable };
   }),
+
+  invalidateDatabase: async (connID, db) => {
+    // 重新加载该数据库下的表和视图
+    // MySQL 的 schema 默认与 database 同名
+    await get().loadTables(connID, db, db);
+  },
+
+  invalidateTable: async (connID, db, schema, table) => {
+    // 重新加载表详情
+    await get().loadTableDetail(connID, db, schema, table);
+  },
+
+  refreshTree: async (connID) => {
+    // 刷新指定连接的整个树
+    get().resetTree(connID);
+    await get().loadDatabases(connID);
+  },
+
+  getConnIDForNode: (node) => {
+    return node.connID;
+  },
 }));

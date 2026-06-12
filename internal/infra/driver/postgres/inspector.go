@@ -254,6 +254,59 @@ func (i *inspector) ListForeignKeys(ctx context.Context, database, schema, table
 	return detail.ForeignKeys, nil
 }
 
+// ListCharsets 列出 PG 可用 encoding
+func (i *inspector) ListCharsets(ctx context.Context) ([]driver.Charset, error) {
+	// PG 中字符集对应 encoding，pg_encoding_to_char 配合 pg_database 列出
+	rows, err := i.conn.pool.Query(ctx,
+		`SELECT DISTINCT pg_encoding_to_char(encoding) AS name FROM pg_database WHERE encoding IS NOT NULL ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: list charsets: %w", err)
+	}
+	defer rows.Close()
+	result := make([]driver.Charset, 0)
+	for rows.Next() {
+		var cs driver.Charset
+		if err := rows.Scan(&cs.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, cs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 常用兜底
+	if len(result) == 0 {
+		result = []driver.Charset{
+			{Name: "UTF8"},
+			{Name: "LATIN1"},
+			{Name: "SQL_ASCII"},
+		}
+	}
+	return result, nil
+}
+
+// ListCollations 列出 PG 排序规则
+func (i *inspector) ListCollations(ctx context.Context, charset string) ([]driver.Collation, error) {
+	_ = charset
+	rows, err := i.conn.pool.Query(ctx,
+		`SELECT collname, COALESCE(pg_encoding_to_char(collencoding), '') AS charset
+			FROM pg_collation
+			ORDER BY collname`)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: list collations: %w", err)
+	}
+	defer rows.Close()
+	result := make([]driver.Collation, 0)
+	for rows.Next() {
+		var c driver.Collation
+		if err := rows.Scan(&c.Name, &c.Charset); err != nil {
+			return nil, err
+		}
+		result = append(result, c)
+	}
+	return result, rows.Err()
+}
+
 // pgFKRule 把 PG 单字母规则码转可读字符串
 func pgFKRule(code string) string {
 	switch code {

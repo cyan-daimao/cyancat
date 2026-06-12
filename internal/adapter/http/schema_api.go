@@ -79,3 +79,120 @@ func (a *SchemaAPI) DescribeTable(connID int64, database, schema, table string) 
 	}
 	return api.Success(dto.ToTableDetailDTO(detail))
 }
+
+// --- DDL 相关 API ---
+
+// ListCharsets 列出可用字符集
+func (a *SchemaAPI) ListCharsets(req *dto.ListCharsetsRequest) *api.Response[[]*dto.CharsetDTO] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[[]*dto.CharsetDTO](api.BadRequestCode, nil, "connID must be positive")
+	}
+	list, err := a.svc.ListCharsets(&schemaservice.ListCharsetsQuery{ConnID: req.ConnID})
+	if err != nil {
+		return api.Fail[[]*dto.CharsetDTO](api.ErrorCode, nil, err.Error())
+	}
+	return api.Success(dto.ToCharsetDTOs(list))
+}
+
+// ListCollations 列出排序规则
+func (a *SchemaAPI) ListCollations(req *dto.ListCollationsRequest) *api.Response[[]*dto.CollationDTO] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[[]*dto.CollationDTO](api.BadRequestCode, nil, "connID must be positive")
+	}
+	list, err := a.svc.ListCollations(&schemaservice.ListCollationsQuery{ConnID: req.ConnID, Charset: req.Charset})
+	if err != nil {
+		return api.Fail[[]*dto.CollationDTO](api.ErrorCode, nil, err.Error())
+	}
+	return api.Success(dto.ToCollationDTOs(list))
+}
+
+// GetCreateTableDDL 获取建表 DDL
+func (a *SchemaAPI) GetCreateTableDDL(req *dto.GetCreateTableDDLRequest) *api.Response[string] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[string](api.BadRequestCode, "", "connID must be positive")
+	}
+	if req.Table == "" {
+		return api.Fail[string](api.BadRequestCode, "", "table is required")
+	}
+	ddl, err := a.svc.GetCreateTableDDL(&schemaservice.GetCreateTableDDLQuery{
+		ConnID:   req.ConnID,
+		Database: req.Database,
+		Schema:   req.Schema,
+		Table:    req.Table,
+	})
+	if err != nil {
+		return api.Fail[string](api.ErrorCode, "", err.Error())
+	}
+	return api.Success(ddl)
+}
+
+// PreviewCreateTable 预览新建表 DDL
+func (a *SchemaAPI) PreviewCreateTable(req *dto.CreateTableRequest) *api.Response[string] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[string](api.BadRequestCode, "", "connID must be positive")
+	}
+	cmd := dto.ToCreateTableCmd(req)
+	ddl, err := a.svc.PreviewCreateTable(cmd)
+	if err != nil {
+		return api.Fail[string](api.ErrorCode, "", err.Error())
+	}
+	return api.Success(ddl)
+}
+
+// PreviewAlterTable 预览修改表 DDL
+func (a *SchemaAPI) PreviewAlterTable(req *dto.AlterTableRequest) *api.Response[string] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[string](api.BadRequestCode, "", "connID must be positive")
+	}
+	cmd := dto.ToAlterTableCmd(req)
+	ddl, err := a.svc.PreviewAlterTable(cmd)
+	if err != nil {
+		return api.Fail[string](api.ErrorCode, "", err.Error())
+	}
+	return api.Success(ddl)
+}
+
+// CreateDatabase 新建数据库
+func (a *SchemaAPI) CreateDatabase(req *dto.CreateDatabaseRequest) *api.Response[bool] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[bool](api.BadRequestCode, false, "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[bool](api.BadRequestCode, false, "database name is required")
+	}
+	cmd := dto.ToCreateDatabaseCmd(req)
+	if err := a.svc.CreateDatabase(cmd); err != nil {
+		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	return api.Success(true)
+}
+
+// CreateTable 新建表
+func (a *SchemaAPI) CreateTable(req *dto.CreateTableRequest) *api.Response[bool] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[bool](api.BadRequestCode, false, "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[bool](api.BadRequestCode, false, "table name is required")
+	}
+	cmd := dto.ToCreateTableCmd(req)
+	if err := a.svc.CreateTable(cmd); err != nil {
+		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	return api.Success(true)
+}
+
+// AlterTable 修改表
+func (a *SchemaAPI) AlterTable(req *dto.AlterTableRequest) *api.Response[bool] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[bool](api.BadRequestCode, false, "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[bool](api.BadRequestCode, false, "table name is required")
+	}
+	cmd := dto.ToAlterTableCmd(req)
+	if err := a.svc.AlterTable(cmd); err != nil {
+		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	return api.Success(true)
+}

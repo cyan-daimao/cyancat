@@ -73,13 +73,114 @@ func ToColumnBOs(list []driver.Column) []ColumnBO {
 	result := make([]ColumnBO, 0, len(list))
 	for _, c := range list {
 		result = append(result, ColumnBO{
-			Name:         c.Name,
-			DatabaseType: c.DatabaseType,
-			Nullable:     c.Nullable,
-			IsPrimary:    c.IsPrimary,
+			Name:            c.Name,
+			DatabaseType:    c.DatabaseType,
+			Nullable:        c.Nullable,
+			IsPrimary:       c.IsPrimary,
+			AutoIncrement:   c.AutoIncrement,
+			Unsigned:        c.Unsigned,
+			DefaultValue:    c.DefaultValue,
+			Comment:         c.Comment,
+			Extra:           c.Extra,
+			OrdinalPosition: c.OrdinalPosition,
+			TypeLength:      c.TypeLength,
+			Precision:       c.Precision,
+			Scale:           c.Scale,
+			Collation:       c.Collation,
 		})
 	}
 	return result
+}
+
+// ToCharsetBOs 转换字符集列表
+func ToCharsetBOs(list []driver.Charset) []*CharsetBO {
+	result := make([]*CharsetBO, 0, len(list))
+	for _, c := range list {
+		result = append(result, &CharsetBO{
+			Name:             c.Name,
+			Description:      c.Description,
+			DefaultCollation: c.DefaultCollation,
+		})
+	}
+	return result
+}
+
+// ToCollationBOs 转换排序规则列表
+func ToCollationBOs(list []driver.Collation) []*CollationBO {
+	result := make([]*CollationBO, 0, len(list))
+	for _, c := range list {
+		result = append(result, &CollationBO{
+			Name:      c.Name,
+			Charset:   c.Charset,
+			IsDefault: c.IsDefault,
+		})
+	}
+	return result
+}
+
+// --- 应用层 spec 转 driver spec ---
+
+// toDriverColumnSpecs 转换字段规格列表
+func toDriverColumnSpecs(list []ColumnSpec) []driver.ColumnSpec {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]driver.ColumnSpec, 0, len(list))
+	for _, c := range list {
+		out = append(out, driver.ColumnSpec{
+			Name:          c.Name,
+			DataType:      c.DataType,
+			TypeLength:    c.TypeLength,
+			Precision:     c.Precision,
+			Scale:         c.Scale,
+			Nullable:      c.Nullable,
+			Unsigned:      c.Unsigned,
+			AutoIncrement: c.AutoIncrement,
+			DefaultValue:  c.DefaultValue,
+			Comment:       c.Comment,
+			Collation:     c.Collation,
+			First:         c.First,
+			After:         c.After,
+		})
+	}
+	return out
+}
+
+// toDriverIndexSpecs 转换索引规格列表
+func toDriverIndexSpecs(list []IndexSpec) []driver.IndexSpec {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]driver.IndexSpec, 0, len(list))
+	for _, idx := range list {
+		out = append(out, driver.IndexSpec{
+			Name:    idx.Name,
+			Type:    idx.Type,
+			Columns: idx.Columns,
+			Comment: idx.Comment,
+		})
+	}
+	return out
+}
+
+// toDriverForeignKeySpecs 转换外键规格列表
+func toDriverForeignKeySpecs(list []ForeignKeySpec) []driver.ForeignKeySpec {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]driver.ForeignKeySpec, 0, len(list))
+	for _, fk := range list {
+		out = append(out, driver.ForeignKeySpec{
+			Name:              fk.Name,
+			Columns:           fk.Columns,
+			ReferencedSchema:  fk.ReferencedSchema,
+			ReferencedTable:   fk.ReferencedTable,
+			ReferencedColumns: fk.ReferencedColumns,
+			OnUpdate:          fk.OnUpdate,
+			OnDelete:          fk.OnDelete,
+		})
+	}
+	return out
 }
 
 // ToIndexBOs 转换索引列表

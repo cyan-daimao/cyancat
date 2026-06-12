@@ -1,19 +1,51 @@
 import React from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
-import { Download, Copy } from 'lucide-react';
+import { Download, Copy, FileText, Clipboard, Hash } from 'lucide-react';
 import type { QueryResultDTO } from '@/lib/api/types';
 import { toast } from '@/components/ui/use-toast';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { useSchemaStore } from '@/stores/schema';
 
 interface ResultPanelProps {
   result: QueryResultDTO;
+  /** 可选：用于生成 INSERT SQL 时的表名；不传则尝试从全局 schema store 取 */
+  tableName?: string;
 }
 
-const ResultPanel: React.FC<ResultPanelProps> = ({ result }) => {
+/** 将任意值格式化为字符串（NULL/undefined 统一显示为 "NULL"） */
+const formatValue = (v: any): string => {
+  if (v === null || v === undefined) return 'NULL';
+  return String(v);
+};
+
+/** 把值序列化成 SQL 字面量（NULL/数字/布尔保持裸值，其余加单引号并转义） */
+const toSqlLiteral = (v: any): string => {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number' || typeof v === 'bigint') return String(v);
+  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  const s = String(v).replace(/'/g, "''");
+  return `'${s}'`;
+};
+
+const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
   const parentRef = React.useRef<HTMLDivElement>(null);
 
   const cols = result.columns ?? [];
   const rows = result.rows ?? [];
+
+  // 从全局 store 推断表名（INSERT SQL 用），若未传 prop
+  const selectedNode = useSchemaStore(s => s.selectedNode);
+  const resolvedTableName =
+    tableName ||
+    selectedNode?.tableName ||
+    'table_name';
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -42,6 +74,42 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result }) => {
     const body = rows.map(r => '| ' + r.map(v => String(v ?? 'NULL')).join(' | ') + ' |').join('\n');
     navigator.clipboard.writeText(header + '\n' + sep + '\n' + body);
     toast({ title: '已复制为 Markdown 表格' });
+  };
+
+  // ----- 右键菜单：复制操作 -----
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: '已复制' });
+    } catch (e: any) {
+      toast({ title: '复制失败', description: e?.message, variant: 'destructive' });
+    }
+  };
+
+  const copyCell = (rowIdx: number, colIdx: number) => {
+    const v = rows[rowIdx]?.[colIdx];
+    copyText(formatValue(v));
+  };
+
+  const copyRowTSV = (rowIdx: number) => {
+    const row = rows[rowIdx];
+    if (!row) return;
+    copyText(row.map(formatValue).join('\t'));
+  };
+
+  const copyRowInsert = (rowIdx: number) => {
+    const row = rows[rowIdx];
+    if (!row) return;
+    const colList = cols.map(c => `\`${c.name}\``).join(', ');
+    const valList = row.map(toSqlLiteral).join(', ');
+    const sql = `INSERT INTO \`${resolvedTableName}\` (${colList}) VALUES (${valList});`;
+    copyText(sql);
+  };
+
+  const copyColName = (colIdx: number) => {
+    const c = cols[colIdx];
+    if (!c) return;
+    copyText(c.name);
   };
 
   const renderCell = (value: any) => {
@@ -83,23 +151,70 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result }) => {
             <tr>
               <th className="px-2 py-1 text-left font-medium text-muted-foreground w-10">#</th>
               {cols.map((col, i) => (
-                <th key={i} className="px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap">
-                  {col.name}
-                  <span className="ml-1 opacity-50">{col.databaseType}</span>
-                </th>
+                <ContextMenu key={i}>
+                  <ContextMenuTrigger asChild>
+                    <th className="px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap cursor-default">
+                      {col.name}
+                      <span className="ml-1 opacity-50">{col.databaseType}</span>
+                    </th>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => copyColName(i)}>
+                      <Hash className="h-3 w-3" />
+                      复制列名
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))}
             </tr>
           </thead>
           <tbody>
             {virtualizer.getVirtualItems().map(virtualRow => {
-              const row = rows[virtualRow.index];
+              const rowIdx = virtualRow.index;
+              const row = rows[rowIdx];
               return (
-                <tr key={virtualRow.index} className="border-b border-border/50 hover:bg-accent/30" style={{ height: virtualRow.size }}>
-                  <td className="px-2 py-0.5 text-muted-foreground">{virtualRow.index + 1}</td>
-                  {row?.map((cell, ci) => (
-                    <td key={ci} className="px-2 py-0.5 max-w-xs">{renderCell(cell)}</td>
-                  ))}
-                </tr>
+                <ContextMenu key={rowIdx}>
+                  <ContextMenuTrigger asChild>
+                    <tr
+                      className="border-b border-border/50 hover:bg-accent/30"
+                      style={{ height: virtualRow.size }}
+                    >
+                      <td className="px-2 py-0.5 text-muted-foreground">{rowIdx + 1}</td>
+                      {row?.map((cell, ci) => (
+                        <ContextMenu key={ci}>
+                          <ContextMenuTrigger asChild>
+                            <td className="px-2 py-0.5 max-w-xs">{renderCell(cell)}</td>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent>
+                            <ContextMenuItem onClick={() => copyCell(rowIdx, ci)}>
+                              <Copy className="h-3 w-3" />
+                              复制单元格
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => copyRowTSV(rowIdx)}>
+                              <Clipboard className="h-3 w-3" />
+                              复制行 (TSV)
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => copyRowInsert(rowIdx)}>
+                              <FileText className="h-3 w-3" />
+                              复制行 (INSERT SQL)
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      ))}
+                    </tr>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => copyRowTSV(rowIdx)}>
+                      <Clipboard className="h-3 w-3" />
+                      复制行 (TSV)
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => copyRowInsert(rowIdx)}>
+                      <FileText className="h-3 w-3" />
+                      复制行 (INSERT SQL)
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             })}
           </tbody>
