@@ -253,6 +253,37 @@ func (s *SchemaServiceImpl) CreateDatabase(cmd *CreateDatabaseCmd) error {
 	return err
 }
 
+// PreviewDropDatabase 预览 DROP DATABASE DDL（不执行）
+func (s *SchemaServiceImpl) PreviewDropDatabase(cmd *DropDatabaseCmd) (string, error) {
+	if cmd == nil || cmd.ConnID <= 0 {
+		return "", errors.New("schemaservice: connID is required")
+	}
+	if strings.TrimSpace(cmd.Name) == "" {
+		return "", errors.New("schemaservice: database name is required")
+	}
+	conn, err := s.sessionMgr.Get(cmd.ConnID)
+	if err != nil {
+		return "", err
+	}
+	return conn.DDL().DropDatabase(cmd.Name)
+}
+
+// DropDatabase 删除数据库
+func (s *SchemaServiceImpl) DropDatabase(cmd *DropDatabaseCmd) error {
+	sql, err := s.PreviewDropDatabase(cmd)
+	if err != nil {
+		return err
+	}
+	conn, err := s.sessionMgr.Get(cmd.ConnID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err = conn.Execute(ctx, sql)
+	return err
+}
+
 // PreviewCreateTable 预览 CREATE TABLE DDL（不执行）
 func (s *SchemaServiceImpl) PreviewCreateTable(cmd *CreateTableCmd) (string, error) {
 	if cmd == nil || cmd.ConnID <= 0 {
@@ -269,13 +300,13 @@ func (s *SchemaServiceImpl) PreviewCreateTable(cmd *CreateTableCmd) (string, err
 		return "", err
 	}
 	spec := driver.TableSpec{
-		Database: cmd.Database,
-		Schema:   cmd.Schema,
-		Name:     cmd.Name,
-		Engine:   cmd.Engine,
-		Charset:  cmd.Charset,
-		Collation: cmd.Collation,
-		Comment:  cmd.Comment,
+		Database:   cmd.Database,
+		Schema:     cmd.Schema,
+		Name:       cmd.Name,
+		Engine:     cmd.Engine,
+		Charset:    cmd.Charset,
+		Collation:  cmd.Collation,
+		Comment:    cmd.Comment,
 		PrimaryKey: cmd.PK,
 	}
 	spec.Columns = toDriverColumnSpecs(cmd.Columns)
@@ -323,15 +354,15 @@ func (s *SchemaServiceImpl) PreviewAlterTable(cmd *AlterTableCmd) (string, error
 		return "", err
 	}
 	spec := driver.AlterTableSpec{
-		Database: cmd.Database,
-		Schema:   cmd.Schema,
-		Name:     cmd.Name,
-		Engine:   cmd.Engine,
-		Charset:  cmd.Charset,
-		Collation: cmd.Collation,
-		Comment:  cmd.Comment,
-		DropColumns: cmd.DropColumns,
-		DropIndexes: cmd.DropIndexes,
+		Database:        cmd.Database,
+		Schema:          cmd.Schema,
+		Name:            cmd.Name,
+		Engine:          cmd.Engine,
+		Charset:         cmd.Charset,
+		Collation:       cmd.Collation,
+		Comment:         cmd.Comment,
+		DropColumns:     cmd.DropColumns,
+		DropIndexes:     cmd.DropIndexes,
 		DropForeignKeys: cmd.DropForeignKeys,
 	}
 	spec.AddColumns = toDriverColumnSpecs(cmd.AddColumns)

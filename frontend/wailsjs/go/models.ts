@@ -930,6 +930,20 @@ export namespace dto {
 	        this.collation = source["collation"];
 	    }
 	}
+	export class DropDatabaseRequest {
+	    connID: number;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DropDatabaseRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connID = source["connID"];
+	        this.name = source["name"];
+	    }
+	}
 	export class DropTableRequest {
 	    connID: number;
 	    database: string;

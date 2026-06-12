@@ -166,6 +166,14 @@ type CreateDatabaseRequest struct {
 	Collation string `json:"collation"`
 }
 
+// DropDatabaseRequest 删除数据库请求
+type DropDatabaseRequest struct {
+	// ConnID 连接 ID
+	ConnID int64 `json:"connID"`
+	// Name 数据库名
+	Name string `json:"name"`
+}
+
 // ColumnSpecDTO 字段规格
 type ColumnSpecDTO struct {
 	// Name 字段名
@@ -528,6 +536,17 @@ func ToCreateDatabaseCmd(req *CreateDatabaseRequest) *schemaservice.CreateDataba
 		Name:      req.Name,
 		Charset:   req.Charset,
 		Collation: req.Collation,
+	}
+}
+
+// ToDropDatabaseCmd 转换删除数据库命令
+func ToDropDatabaseCmd(req *DropDatabaseRequest) *schemaservice.DropDatabaseCmd {
+	if req == nil {
+		return nil
+	}
+	return &schemaservice.DropDatabaseCmd{
+		ConnID: req.ConnID,
+		Name:   req.Name,
 	}
 }
 

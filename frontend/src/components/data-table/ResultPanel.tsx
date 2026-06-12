@@ -37,11 +37,69 @@ const toSqlLiteral = (v: any): string => {
 
 const PAGE_SIZE_OPTIONS = [50, 100, 500];
 
+const DEFAULT_COL_WIDTH = 200;
+const MIN_COL_WIDTH = 60;
+const MAX_COL_WIDTH = 800;
+const ROW_INDEX_WIDTH = 56;
+
 const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
   const parentRef = React.useRef<HTMLDivElement>(null);
 
   const cols = result.columns ?? [];
   const rows = result.rows ?? [];
+
+  // 每列宽度：按列名 key 存储，未设置时回退到默认宽度
+  const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
+  const getColWidth = (name: string) => colWidths[name] ?? DEFAULT_COL_WIDTH;
+
+  // 当列集合变化时（例如切换查询结果），重置宽度
+  const colsKey = React.useMemo(() => cols.map(c => c.name).join('|'), [cols]);
+  React.useEffect(() => {
+    setColWidths({});
+  }, [colsKey]);
+
+  // 拖拽列宽
+  const dragState = React.useRef<{ name: string; startX: number; startWidth: number } | null>(null);
+
+  const onResizeMouseDown = (e: React.MouseEvent, name: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragState.current = {
+      name,
+      startX: e.clientX,
+      startWidth: getColWidth(name),
+    };
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      const s = dragState.current;
+      if (!s) return;
+      const next = Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, s.startWidth + (ev.clientX - s.startX)));
+      setColWidths(prev => ({ ...prev, [s.name]: next }));
+    };
+    const onUp = () => {
+      dragState.current = null;
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const onResizeDoubleClick = (e: React.MouseEvent, name: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setColWidths(prev => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
 
   // 分页状态
   const [pageSize, setPageSize] = React.useState(50);
@@ -130,18 +188,38 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     copyText(c.name);
   };
 
+  /**
+   * 渲染单元格内容。
+   * 关键点：
+   *  - 完整字符串始终保留在 DOM 中（不截断 textContent），
+   *    这样双击选中 / 拖拽选区 / 复制 都能拿到原值；
+   *  - 通过 CSS `truncate`（overflow:hidden + text-overflow:ellipsis + nowrap）
+   *    让超长文本视觉上省略，不会撑列遮挡其他字段；
+   *  - 配合 <table style={{ tableLayout: 'fixed' }}>，列宽不会被超长内容撑爆。
+   */
   const renderCell = (value: any) => {
     if (value === null || value === undefined) {
       return <span className="text-muted-foreground italic">NULL</span>;
     }
     const str = String(value);
+
+    // JSON 值仍以等宽字体显示，但同样不截断 textContent
+    let isJson = false;
     if (str.startsWith('{') || str.startsWith('[')) {
       try {
         JSON.parse(str);
-        return <span className="text-blue-400 text-xs font-mono">{str.length > 200 ? str.slice(0, 200) + '...' : str}</span>;
+        isJson = true;
       } catch {}
     }
-    return <span className="truncate">{str}</span>;
+
+    return (
+      <div
+        className={`truncate ${isJson ? 'text-blue-400 font-mono' : ''}`}
+        title={str}
+      >
+        {str}
+      </div>
+    );
   };
 
   // 生成分页页码按钮
@@ -199,16 +277,40 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
 
       {/* 表格 */}
       <div ref={parentRef} className="flex-1 overflow-auto">
-        <table className="w-full text-xs">
+        <table
+          className="text-xs"
+          style={{
+            tableLayout: 'fixed',
+            width: ROW_INDEX_WIDTH + cols.reduce((sum, c) => sum + getColWidth(c.name), 0),
+            minWidth: '100%',
+          }}
+        >
+          <colgroup>
+            <col style={{ width: ROW_INDEX_WIDTH }} />
+            {cols.map((col, i) => (
+              <col key={i} style={{ width: getColWidth(col.name) }} />
+            ))}
+          </colgroup>
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
             <tr>
-              <th className="px-2 py-1 text-left font-medium text-muted-foreground w-10">#</th>
+              <th className="px-2 py-1 text-left font-medium text-muted-foreground">#</th>
               {cols.map((col, i) => (
                 <ContextMenu key={i}>
                   <ContextMenuTrigger asChild>
-                    <th className="px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap cursor-default">
-                      {col.name}
-                      <span className="ml-1 opacity-50">{col.databaseType}</span>
+                    <th className="relative px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap cursor-default overflow-hidden">
+                      <div className="truncate pr-2" title={`${col.name} ${col.databaseType}`}>
+                        {col.name}
+                        <span className="ml-1 opacity-50">{col.databaseType}</span>
+                      </div>
+                      {/* 拖拽手柄：右边缘 */}
+                      <div
+                        role="separator"
+                        aria-orientation="vertical"
+                        onMouseDown={(e) => onResizeMouseDown(e, col.name)}
+                        onDoubleClick={(e) => onResizeDoubleClick(e, col.name)}
+                        title="拖拽调整列宽，双击重置"
+                        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize select-none hover:bg-primary/40 active:bg-primary/60 z-20"
+                      />
                     </th>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
@@ -222,54 +324,78 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
             </tr>
           </thead>
           <tbody>
-            {virtualizer.getVirtualItems().map(virtualRow => {
-              const rowIdx = virtualRow.index;
-              const row = pagedRows[rowIdx];
+            {(() => {
+              const virtualItems = virtualizer.getVirtualItems();
+              const totalSize = virtualizer.getTotalSize();
+              const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+              const paddingBottom =
+                virtualItems.length > 0
+                  ? totalSize - virtualItems[virtualItems.length - 1].end
+                  : 0;
+
               return (
-                <ContextMenu key={rowIdx}>
-                  <ContextMenuTrigger asChild>
-                    <tr
-                      className="border-b border-border/50 hover:bg-accent/30"
-                      style={{ height: virtualRow.size }}
-                    >
-                      <td className="px-2 py-0.5 text-muted-foreground">{offset + rowIdx + 1}</td>
-                      {row?.map((cell, ci) => (
-                        <ContextMenu key={ci}>
-                          <ContextMenuTrigger asChild>
-                            <td className="px-2 py-0.5 max-w-xs">{renderCell(cell)}</td>
-                          </ContextMenuTrigger>
-                          <ContextMenuContent>
-                            <ContextMenuItem onClick={() => copyCell(rowIdx, ci)}>
-                              <Copy className="h-3 w-3" />
-                              复制单元格
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem onClick={() => copyRowTSV(rowIdx)}>
-                              <Clipboard className="h-3 w-3" />
-                              复制行 (TSV)
-                            </ContextMenuItem>
-                            <ContextMenuItem onClick={() => copyRowInsert(rowIdx)}>
-                              <FileText className="h-3 w-3" />
-                              复制行 (INSERT SQL)
-                            </ContextMenuItem>
-                          </ContextMenuContent>
-                        </ContextMenu>
-                      ))}
+                <>
+                  {paddingTop > 0 && (
+                    <tr aria-hidden="true">
+                      <td colSpan={cols.length + 1} style={{ height: paddingTop, padding: 0, border: 0 }} />
                     </tr>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem onClick={() => copyRowTSV(rowIdx)}>
-                      <Clipboard className="h-3 w-3" />
-                      复制行 (TSV)
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={() => copyRowInsert(rowIdx)}>
-                      <FileText className="h-3 w-3" />
-                      复制行 (INSERT SQL)
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
+                  )}
+                  {virtualItems.map(virtualRow => {
+                    const rowIdx = virtualRow.index;
+                    const row = pagedRows[rowIdx];
+                    return (
+                      <ContextMenu key={rowIdx}>
+                        <ContextMenuTrigger asChild>
+                          <tr
+                            className="border-b border-border/50 hover:bg-accent/30"
+                            style={{ height: virtualRow.size }}
+                          >
+                            <td className="px-2 py-0.5 text-muted-foreground overflow-hidden">{offset + rowIdx + 1}</td>
+                            {row?.map((cell, ci) => (
+                              <ContextMenu key={ci}>
+                                <ContextMenuTrigger asChild>
+                                  <td className="px-2 py-0.5 align-middle overflow-hidden">{renderCell(cell)}</td>
+                                </ContextMenuTrigger>
+                                <ContextMenuContent>
+                                  <ContextMenuItem onClick={() => copyCell(rowIdx, ci)}>
+                                    <Copy className="h-3 w-3" />
+                                    复制单元格
+                                  </ContextMenuItem>
+                                  <ContextMenuSeparator />
+                                  <ContextMenuItem onClick={() => copyRowTSV(rowIdx)}>
+                                    <Clipboard className="h-3 w-3" />
+                                    复制行 (TSV)
+                                  </ContextMenuItem>
+                                  <ContextMenuItem onClick={() => copyRowInsert(rowIdx)}>
+                                    <FileText className="h-3 w-3" />
+                                    复制行 (INSERT SQL)
+                                  </ContextMenuItem>
+                                </ContextMenuContent>
+                              </ContextMenu>
+                            ))}
+                          </tr>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem onClick={() => copyRowTSV(rowIdx)}>
+                            <Clipboard className="h-3 w-3" />
+                            复制行 (TSV)
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={() => copyRowInsert(rowIdx)}>
+                            <FileText className="h-3 w-3" />
+                            复制行 (INSERT SQL)
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr aria-hidden="true">
+                      <td colSpan={cols.length + 1} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                    </tr>
+                  )}
+                </>
               );
-            })}
+            })()}
           </tbody>
         </table>
       </div>

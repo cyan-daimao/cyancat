@@ -29,6 +29,7 @@ interface SchemaState {
   // 操作
   setSelectedNode: (node: TreeNode | null) => void;
   loadDatabases: (connID: number) => Promise<void>;
+  loadSchemas: (connID: number, database: string) => Promise<void>;
   loadTables: (connID: number, database: string, schema: string) => Promise<void>;
   loadTableDetail: (connID: number, database: string, schema: string, table: string) => Promise<void>;
   toggleExpand: (key: string) => void;
@@ -69,32 +70,68 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
     }
   },
 
+  loadSchemas: async (connID, database) => {
+    try {
+      const schemas = await schemaApi.listSchemas(connID, database);
+      const nodes: TreeNode[] = schemas.map(s => ({
+        key: `conn:${connID}:db:${database}:schema:${s.name}`,
+        label: s.name,
+        type: 'schema' as const,
+        connID,
+        database,
+        schema: s.name,
+        loaded: false,
+        children: [],
+      }));
+
+      set(state => {
+        const trees = { ...state.trees };
+        const dbNodes = trees[connID] || [];
+        const updateChildren = (items: TreeNode[]): TreeNode[] =>
+          items.map(n => {
+            if (n.key === `conn:${connID}:db:${database}`) {
+              return { ...n, children: nodes, loaded: true };
+            }
+            if (n.children) {
+              return { ...n, children: updateChildren(n.children) };
+            }
+            return n;
+          });
+        trees[connID] = updateChildren(dbNodes);
+        return { trees };
+      });
+    } catch (e: any) {
+      toast({ title: '加载 Schema 列表失败', description: e.message, variant: 'destructive' });
+    }
+  },
+
   loadTables: async (connID, database, schema) => {
     try {
+      const targetSchema = schema || database;
       const [tables, views] = await Promise.all([
-        schemaApi.listTables(connID, database, schema),
-        schemaApi.listViews(connID, database, schema).catch(() => [] as any[]),
+        schemaApi.listTables(connID, database, targetSchema),
+        schemaApi.listViews(connID, database, targetSchema).catch(() => [] as any[]),
       ]);
 
       const tableNodes: TreeNode[] = tables.map(t => ({
-        key: `conn:${connID}:db:${database}:schema:${schema}:table:${t.name}`,
+        key: `conn:${connID}:db:${database}:schema:${targetSchema}:table:${t.name}`,
         label: t.name,
         type: 'table' as const,
         connID,
         database,
-        schema,
+        schema: targetSchema,
         tableName: t.name,
         loaded: false,
         children: [],
       }));
 
       const viewNodes: TreeNode[] = views.map((v: any) => ({
-        key: `conn:${connID}:db:${database}:schema:${schema}:view:${v.name}`,
+        key: `conn:${connID}:db:${database}:schema:${targetSchema}:view:${v.name}`,
         label: v.name,
         type: 'view' as const,
         connID,
         database,
-        schema,
+        schema: targetSchema,
         tableName: v.name,
         loaded: true, // views don't have sub-children in V1.0
       }));
@@ -106,7 +143,10 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
         const dbNodes = trees[connID] || [];
         const updateChildren = (nodes: TreeNode[]): TreeNode[] =>
           nodes.map(n => {
-            if (n.key === `conn:${connID}:db:${database}`) {
+            if (
+              n.key === `conn:${connID}:db:${database}:schema:${targetSchema}` ||
+              (n.key === `conn:${connID}:db:${database}` && n.children?.every(child => child.type !== 'schema'))
+            ) {
               return { ...n, children: allNodes, loaded: true };
             }
             if (n.children) {

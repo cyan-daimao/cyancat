@@ -10,6 +10,12 @@ type CreateDatabaseCmd struct {
 	Collation string
 }
 
+// DropDatabaseCmd 删除数据库命令
+type DropDatabaseCmd struct {
+	ConnID int64
+	Name   string
+}
+
 // CreateTableCmd 创建表命令
 type CreateTableCmd struct {
 	ConnID      int64

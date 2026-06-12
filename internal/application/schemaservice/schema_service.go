@@ -27,6 +27,10 @@ type SchemaService interface {
 	PreviewCreateDatabase(cmd *CreateDatabaseCmd) (string, error)
 	// CreateDatabase 创建数据库
 	CreateDatabase(cmd *CreateDatabaseCmd) error
+	// PreviewDropDatabase 预览 DROP DATABASE DDL（不执行）
+	PreviewDropDatabase(cmd *DropDatabaseCmd) (string, error)
+	// DropDatabase 删除数据库
+	DropDatabase(cmd *DropDatabaseCmd) error
 	// PreviewCreateTable 预览 CREATE TABLE DDL（不执行）
 	PreviewCreateTable(cmd *CreateTableCmd) (string, error)
 	// CreateTable 创建表

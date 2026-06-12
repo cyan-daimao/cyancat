@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"cyancat/internal/infra/driver"
@@ -42,6 +43,7 @@ func (d *Driver) Connect(ctx context.Context, cfg driver.ConnConfig) (driver.Con
 		return nil, fmt.Errorf("postgres: expect type %q, got %q", driver.PostgreSQL, cfg.Type)
 	}
 
+	cfg.Database = normalizeDatabase(cfg.Database)
 	dsn := buildDSN(cfg)
 
 	poolCfg, err := pgxpool.ParseConfig(dsn)
@@ -70,7 +72,17 @@ func (d *Driver) Connect(ctx context.Context, cfg driver.ConnConfig) (driver.Con
 		return nil, fmt.Errorf("postgres: ping: %w", err)
 	}
 
-	return &Conn{pool: pool, dialect: d.dialect}, nil
+	return &Conn{pool: pool, dialect: d.dialect, cfg: cfg}, nil
+}
+
+const defaultDatabase = "postgres"
+
+func normalizeDatabase(database string) string {
+	database = strings.TrimSpace(database)
+	if database == "" {
+		return defaultDatabase
+	}
+	return database
 }
 
 func buildDSN(cfg driver.ConnConfig) string {
@@ -82,13 +94,14 @@ func buildDSN(cfg driver.ConnConfig) string {
 	if port == 0 {
 		port = 5432
 	}
+	database := normalizeDatabase(cfg.Database)
 
 	// postgres://user:password@host:port/dbname?sslmode=disable
 	u := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cfg.User, cfg.Password),
 		Host:   host + ":" + strconv.Itoa(port),
-		Path:   "/" + cfg.Database,
+		Path:   "/" + database,
 	}
 
 	q := u.Query()
@@ -109,11 +122,51 @@ func buildDSN(cfg driver.ConnConfig) string {
 type Conn struct {
 	pool    *pgxpool.Pool
 	dialect driver.Dialect
+	cfg     driver.ConnConfig
+}
+
+func (c *Conn) poolForDatabase(ctx context.Context, database string) (*pgxpool.Pool, func(), error) {
+	target := normalizeDatabase(database)
+	current := normalizeDatabase(c.cfg.Database)
+	if target == current {
+		return c.pool, func() {}, nil
+	}
+
+	cfg := c.cfg
+	cfg.Database = target
+	poolCfg, err := pgxpool.ParseConfig(buildDSN(cfg))
+	if err != nil {
+		return nil, nil, fmt.Errorf("postgres: parse database %q config: %w", target, err)
+	}
+	poolCfg.MaxConns = 1
+	poolCfg.MinConns = 1
+	poolCfg.MaxConnLifetime = time.Hour
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("postgres: connect database %q: %w", target, err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("postgres: ping database %q: %w", target, err)
+	}
+	return pool, pool.Close, nil
 }
 
 // Ping 测试连接
 func (c *Conn) Ping(ctx context.Context) error {
 	return c.pool.Ping(ctx)
+}
+
+// WithDatabase PostgreSQL/Hologres 不能在连接内 USE database，需要连接到目标 database。
+func (c *Conn) WithDatabase(ctx context.Context, database string) (driver.Conn, func(), error) {
+	pool, cleanup, err := c.poolForDatabase(ctx, database)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg := c.cfg
+	cfg.Database = normalizeDatabase(database)
+	return &Conn{pool: pool, dialect: c.dialect, cfg: cfg}, cleanup, nil
 }
 
 // Close 关闭连接

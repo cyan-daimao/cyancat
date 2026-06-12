@@ -11,6 +11,8 @@ export function CreateTable(arg1:dto.CreateTableRequest):Promise<api.Response_bo
 
 export function DescribeTable(arg1:number,arg2:string,arg3:string,arg4:string):Promise<api.Response_cyancat_internal_adapter_dto_TableDetailDTO_>;
 
+export function DropDatabase(arg1:dto.DropDatabaseRequest):Promise<api.Response_bool_>;
+
 export function DropTable(arg1:dto.DropTableRequest):Promise<api.Response_bool_>;
 
 export function GetCreateTableDDL(arg1:dto.GetCreateTableDDLRequest):Promise<api.Response_string_>;
@@ -30,5 +32,7 @@ export function ListViews(arg1:number,arg2:string,arg3:string):Promise<api.Respo
 export function PreviewAlterTable(arg1:dto.AlterTableRequest):Promise<api.Response_string_>;
 
 export function PreviewCreateTable(arg1:dto.CreateTableRequest):Promise<api.Response_string_>;
+
+export function PreviewDropDatabase(arg1:dto.DropDatabaseRequest):Promise<api.Response_string_>;
 
 export function PreviewDropTable(arg1:dto.DropTableRequest):Promise<api.Response_string_>;

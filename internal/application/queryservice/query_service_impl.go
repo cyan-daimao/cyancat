@@ -68,7 +68,11 @@ func (s *QueryServiceImpl) Execute(cmd *ExecuteCmd) (*QueryResultBO, error) {
 		start  = time.Now()
 	)
 
-	if err := s.applyExecutionContext(ctx, cmd, conn); err != nil {
+	execConn, cleanup, err := s.prepareExecutionConn(ctx, cmd, conn)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
 		s.recordError(cmd.ConnID, sqlText, err)
 		if s.historyRepo != nil {
 			_ = s.historyRepo.Save(&QueryHistoryBO{
@@ -99,7 +103,7 @@ func (s *QueryServiceImpl) Execute(cmd *ExecuteCmd) (*QueryResultBO, error) {
 			truncated = true
 		}
 
-		res, err := conn.Execute(ctx, finalSQL)
+		res, err := execConn.Execute(ctx, finalSQL)
 		if err != nil {
 			s.recordError(cmd.ConnID, stmtSQL, err)
 			// 记录失败历史
@@ -182,16 +186,16 @@ func (s *QueryServiceImpl) History(query *HistoryQuery) (*api.Page[*QueryHistory
 	return api.NewPage(list, total, query.Page, query.PageSize), nil
 }
 
-func (s *QueryServiceImpl) applyExecutionContext(ctx context.Context, cmd *ExecuteCmd, conn driver.Conn) error {
+func (s *QueryServiceImpl) prepareExecutionConn(ctx context.Context, cmd *ExecuteCmd, conn driver.Conn) (driver.Conn, func(), error) {
 	database := strings.TrimSpace(cmd.Database)
 	schema := strings.TrimSpace(cmd.Schema)
 	if database == "" && schema == "" {
-		return nil
+		return conn, func() {}, nil
 	}
 
 	driverType, err := s.sessionMgr.DriverType(cmd.ConnID)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	switch driverType {
@@ -200,18 +204,28 @@ func (s *QueryServiceImpl) applyExecutionContext(ctx context.Context, cmd *Execu
 			database = schema
 		}
 		if database == "" {
-			return nil
+			return conn, func() {}, nil
 		}
 		_, err := conn.Execute(ctx, "USE "+quoteMySQLIdent(database))
-		return err
-	case driver.PostgreSQL:
-		if schema == "" {
-			return nil
+		if err != nil {
+			return nil, nil, err
 		}
-		_, err := conn.Execute(ctx, "SET search_path TO "+quotePostgresIdent(schema))
-		return err
+		return conn, func() {}, nil
+	case driver.PostgreSQL:
+		execConn, cleanup, err := conn.WithDatabase(ctx, database)
+		if err != nil {
+			return nil, nil, err
+		}
+		if schema == "" {
+			return execConn, cleanup, nil
+		}
+		if _, err := execConn.Execute(ctx, "SET search_path TO "+quotePostgresIdent(schema)); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		return execConn, cleanup, nil
 	default:
-		return nil
+		return conn, func() {}, nil
 	}
 }
 

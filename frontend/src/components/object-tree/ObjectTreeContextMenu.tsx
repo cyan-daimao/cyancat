@@ -36,9 +36,15 @@ function renderIcon(name?: string): React.ReactNode {
 }
 
 const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, children }) => {
-  const { setSelectedNode, loadDatabases, loadTables, loadTableDetail, resetTree } = useSchemaStore();
-  const { openConnIds, openConnection, closeConnection } = useConnectionStore();
-  const { openCreateDatabase, openTableDesigner, openDDLViewer, openDropTableConfirm } = useDesignerStore();
+  const { setSelectedNode, loadDatabases, loadSchemas, loadTables, loadTableDetail, resetTree } = useSchemaStore();
+  const { openConnIds, openConnection, closeConnection, connections } = useConnectionStore();
+  const {
+    openCreateDatabase,
+    openTableDesigner,
+    openDDLViewer,
+    openDropTableConfirm,
+    openDropDatabaseConfirm,
+  } = useDesignerStore();
   const { addEmptyResult, execute } = useQueryStore();
 
   const isConnOpen = openConnIds.has(node.connID);
@@ -65,7 +71,29 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
     return parts.join('.');
   };
 
-  const quotedName = (name: string): string => `\`${name}\``;
+  const getConnectionType = () => connections.find(conn => conn.id === node.connID)?.type;
+  const queryContext = () => {
+    const conn = connections.find(c => c.id === node.connID);
+    const parts = [conn?.name || `连接 ${node.connID}`];
+    if (node.database) parts.push(node.database);
+    if (node.schema && node.schema !== node.database) parts.push(node.schema);
+    return {
+      connID: node.connID,
+      connectionType: conn?.type,
+      database: node.database,
+      schema: node.schema,
+      contextLabel: parts.join(' / '),
+    };
+  };
+  const quoteIdent = (name: string): string => getConnectionType() === 'postgres' ? `"${name.split('"').join('""')}"` : `\`${name}\``;
+  const defaultSchema = (): string => getConnectionType() === 'postgres' ? 'public' : node.database!;
+  const tableScope = (): string => node.schema || defaultSchema();
+  const qualifiedTableName = (): string => {
+    if (getConnectionType() === 'postgres') {
+      return `${quoteIdent(tableScope())}.${quoteIdent(node.tableName!)}`;
+    }
+    return `${quoteIdent(node.database!)}.${quoteIdent(node.tableName!)}`;
+  };
 
   /** 统一 action 派发 */
   const dispatchAction = async (action: string) => {
@@ -104,6 +132,13 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         toast({ title: '数据库属性', description: '即将在后续版本支持' });
         return;
       }
+      case 'drop-database': {
+        openDropDatabaseConfirm({
+          connID: node.connID,
+          name: node.database || node.label,
+        });
+        return;
+      }
 
       // ---- 表 ----
       case 'new-table': {
@@ -111,7 +146,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'create',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
         });
         return;
       }
@@ -120,13 +155,13 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'edit',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName,
         });
         return;
       }
       case 'open-table': {
-        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 500;`;
+        const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 500;`;
         await execute({
           connID: node.connID,
           sql,
@@ -140,7 +175,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         openDDLViewer({
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           table: node.tableName!,
         });
         return;
@@ -150,7 +185,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           const ddl = await schemaApi.getCreateTableDDL(
             node.connID,
             node.database!,
-            node.schema || node.database!,
+            tableScope(),
             node.tableName!,
           );
           await copyText(ddl, 'DDL 已复制');
@@ -160,7 +195,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         return;
       }
       case 'generate-sql-select': {
-        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 100;`;
+        const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 100;`;
         await copyText(sql, 'SELECT SQL 已复制');
         return;
       }
@@ -168,7 +203,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         openDropTableConfirm({
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName!,
         });
         return;
@@ -176,7 +211,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
 
       // ---- 视图 ----
       case 'open-view': {
-        const sql = `SELECT * FROM ${quotedName(node.database!)}.${quotedName(node.tableName!)} LIMIT 500;`;
+        const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 500;`;
         await execute({
           connID: node.connID,
           sql,
@@ -196,7 +231,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'edit',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName!,
           focusTab: 'fields',
           focusField: node.columnName,
@@ -208,7 +243,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'edit',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName!,
           focusTab: 'fields',
           focusField: node.columnName,
@@ -222,7 +257,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'edit',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName!,
           focusTab: 'fields',
           focusField: node.columnName,
@@ -230,7 +265,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         return;
       }
       case 'copy-quoted-name': {
-        await copyText(quotedName(node.columnName || node.label));
+        await copyText(quoteIdent(node.columnName || node.label));
         return;
       }
 
@@ -242,7 +277,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'edit',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName!,
           focusTab: 'indexes',
         });
@@ -255,7 +290,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           mode: 'edit',
           connID: node.connID,
           database: node.database!,
-          schema: node.schema || node.database!,
+          schema: tableScope(),
           tableName: node.tableName!,
           focusTab: 'foreignKeys',
         });
@@ -264,7 +299,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
 
       // ---- 通用 ----
       case 'new-query': {
-        addEmptyResult();
+        addEmptyResult(queryContext());
         toast({ title: '已新建查询', description: '请在 SQL 编辑器中输入' });
         return;
       }
@@ -272,12 +307,18 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         if (node.type === 'connection') {
           await loadDatabases(node.connID);
         } else if (node.type === 'database') {
-          await loadTables(node.connID, node.database!, node.schema || node.database!);
+          if (getConnectionType() === 'postgres') {
+            await loadSchemas(node.connID, node.database!);
+          } else {
+            await loadTables(node.connID, node.database!, node.schema || node.database!);
+          }
+        } else if (node.type === 'schema') {
+          await loadTables(node.connID, node.database!, node.schema || 'public');
         } else if (node.type === 'table') {
           await loadTableDetail(
             node.connID,
             node.database!,
-            node.schema || node.database!,
+            tableScope(),
             node.tableName!,
           );
         }
@@ -287,7 +328,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         await loadTableDetail(
           node.connID,
           node.database!,
-          node.schema || node.database!,
+          tableScope(),
           node.tableName!,
         );
         return;

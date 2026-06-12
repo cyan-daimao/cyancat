@@ -70,6 +70,8 @@ type Driver interface {
 type Conn interface {
 	// Ping 测试连接
 	Ping(ctx context.Context) error
+	// WithDatabase 返回用于指定数据库的执行连接；cleanup 必须在使用后调用
+	WithDatabase(ctx context.Context, database string) (conn Conn, cleanup func(), err error)
 	// Execute 执行 SQL（适用于小结果集或 DML/DDL）
 	Execute(ctx context.Context, sql string, args ...any) (*Result, error)
 	// Stream 流式执行（适用于大结果集，返回游标）

@@ -238,6 +238,11 @@ export interface CreateDatabaseRequest {
   collation: string;
 }
 
+export interface DropDatabaseRequest {
+  connID: number;
+  name: string;
+}
+
 export interface CreateTableRequest {
   connID: number;
   database: string;

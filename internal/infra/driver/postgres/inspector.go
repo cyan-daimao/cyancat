@@ -42,12 +42,18 @@ func (i *inspector) ListDatabases(ctx context.Context) ([]driver.Database, error
 
 // ListSchemas 列出指定数据库下的 schema（当前 PG 默认取 public 即可，这里列出全部）
 func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.Schema, error) {
+	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
+	}
+	defer closePool()
+
 	const q = `SELECT nspname, nspowner::regrole::text
 		FROM pg_catalog.pg_namespace
 		WHERE nspname NOT LIKE 'pg_%' AND nspname != 'information_schema'
 		ORDER BY nspname`
 
-	rows, err := i.conn.pool.Query(ctx, q)
+	rows, err := pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: list schemas: %w", err)
 	}
@@ -66,6 +72,16 @@ func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.
 
 // ListTables 列出指定 schema 下的基表
 func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]driver.Table, error) {
+	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
+	}
+	defer closePool()
+
+	if schema == "" {
+		schema = "public"
+	}
+
 	const q = `SELECT c.relname, c.relkind, COALESCE(d.description, ''), 0
 		FROM pg_catalog.pg_class c
 		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
@@ -73,7 +89,7 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 			AND c.relkind IN ('r', 'p')
 		ORDER BY c.relname`
 
-	rows, err := i.conn.pool.Query(ctx, q, schema)
+	rows, err := pool.Query(ctx, q, schema)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: list tables: %w", err)
 	}
@@ -101,13 +117,23 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 
 // ListViews 列出指定 schema 下的视图
 func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]driver.View, error) {
+	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
+	}
+	defer closePool()
+
+	if schema == "" {
+		schema = "public"
+	}
+
 	const q = `SELECT c.relname, pg_get_viewdef(c.oid)
 		FROM pg_catalog.pg_class c
 		WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
 			AND c.relkind = 'v'
 		ORDER BY c.relname`
 
-	rows, err := i.conn.pool.Query(ctx, q, schema)
+	rows, err := pool.Query(ctx, q, schema)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: list views: %w", err)
 	}
@@ -129,6 +155,12 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 	if table == "" {
 		return nil, fmt.Errorf("pg/inspector: table is required")
 	}
+	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
+	}
+	defer closePool()
+
 	sch := schema
 	if sch == "" {
 		sch = "public"
@@ -140,7 +172,7 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 	}
 
 	// 表注释
-	if err := i.conn.pool.QueryRow(ctx,
+	if err := pool.QueryRow(ctx,
 		`SELECT COALESCE(d.description, '')
 		FROM pg_catalog.pg_class c
 		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
@@ -152,7 +184,7 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 	}
 
 	// 列定义
-	colRows, err := i.conn.pool.Query(ctx,
+	colRows, err := pool.Query(ctx,
 		`SELECT a.attname,
 				pg_catalog.format_type(a.atttypid, a.atttypmod),
 				a.attnotnull,
@@ -180,7 +212,7 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 	}
 
 	// 索引
-	idxRows, err := i.conn.pool.Query(ctx,
+	idxRows, err := pool.Query(ctx,
 		`SELECT i.relname,
 				ARRAY(SELECT a.attname FROM pg_catalog.pg_attribute a WHERE a.attrelid = idx.indrelid AND a.attnum = ANY(idx.indkey) AND a.attnum > 0 ORDER BY a.attnum),
 				idx.indisunique,
@@ -205,7 +237,7 @@ func (i *inspector) DescribeTable(ctx context.Context, database, schema, table s
 	}
 
 	// 外键
-	fkRows, err := i.conn.pool.Query(ctx,
+	fkRows, err := pool.Query(ctx,
 		`SELECT con.conname,
 				ARRAY(SELECT a.attname FROM pg_catalog.pg_attribute a WHERE a.attrelid = con.conrelid AND a.attnum = ANY(con.conkey) ORDER BY a.attnum),
 				ns.nspname,

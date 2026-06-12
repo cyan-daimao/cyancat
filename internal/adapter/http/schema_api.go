@@ -167,6 +167,35 @@ func (a *SchemaAPI) CreateDatabase(req *dto.CreateDatabaseRequest) *api.Response
 	return api.Success(true)
 }
 
+// PreviewDropDatabase 预览 DROP DATABASE DDL
+func (a *SchemaAPI) PreviewDropDatabase(req *dto.DropDatabaseRequest) *api.Response[string] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[string](api.BadRequestCode, "", "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[string](api.BadRequestCode, "", "database name is required")
+	}
+	ddl, err := a.svc.PreviewDropDatabase(dto.ToDropDatabaseCmd(req))
+	if err != nil {
+		return api.Fail[string](api.ErrorCode, "", err.Error())
+	}
+	return api.Success(ddl)
+}
+
+// DropDatabase 删除数据库
+func (a *SchemaAPI) DropDatabase(req *dto.DropDatabaseRequest) *api.Response[bool] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[bool](api.BadRequestCode, false, "connID must be positive")
+	}
+	if req.Name == "" {
+		return api.Fail[bool](api.BadRequestCode, false, "database name is required")
+	}
+	if err := a.svc.DropDatabase(dto.ToDropDatabaseCmd(req)); err != nil {
+		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	return api.Success(true)
+}
+
 // CreateTable 新建表
 func (a *SchemaAPI) CreateTable(req *dto.CreateTableRequest) *api.Response[bool] {
 	if req == nil || req.ConnID <= 0 {

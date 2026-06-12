@@ -1,13 +1,15 @@
 import React from 'react';
 import SqlEditor from './SqlEditor';
 import ResultPanel from '@/components/data-table/ResultPanel';
-import { useQueryStore } from '@/stores/query';
+import { useQueryStore, type QueryTabContext } from '@/stores/query';
 import { useSchemaStore } from '@/stores/schema';
-import { X } from 'lucide-react';
+import { useConnectionStore } from '@/stores/connection';
+import { Plus, X } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 
@@ -16,8 +18,50 @@ const MAX_EDITOR_HEIGHT = 600;
 const DEFAULT_EDITOR_HEIGHT = 200;
 
 const SqlWorkspace: React.FC = () => {
-  const { results, activeResultIndex, setActiveResult, closeResult, closeOtherResults, closeAllResults } = useQueryStore();
+  const {
+    queryTabs,
+    activeQueryTabId,
+    createQueryTab,
+    closeQueryTab,
+    closeOtherQueryTabs,
+    closeQueryTabsToRight,
+    closeQueryTabsToLeft,
+    setActiveQueryTab,
+    updateActiveTabSql,
+    updateActiveTabContext,
+    setActiveResult,
+    closeResult,
+    closeOtherResults,
+    closeAllResults,
+  } = useQueryStore();
   const selectedNode = useSchemaStore(s => s.selectedNode);
+  const connections = useConnectionStore(s => s.connections);
+  const activeTab = queryTabs.find(tab => tab.id === activeQueryTabId) || queryTabs[0];
+  const results = activeTab?.results || [];
+  const activeResultIndex = activeTab?.activeResultIndex || 0;
+
+  const selectedContext = React.useMemo<QueryTabContext | null>(() => {
+    if (!selectedNode) return null;
+    const conn = connections.find(c => c.id === selectedNode.connID);
+    const parts = [conn?.name || `连接 ${selectedNode.connID}`];
+    if (selectedNode.database) parts.push(selectedNode.database);
+    if (selectedNode.schema && selectedNode.schema !== selectedNode.database) {
+      parts.push(selectedNode.schema);
+    }
+    return {
+      connID: selectedNode.connID,
+      connectionType: conn?.type,
+      database: selectedNode.database,
+      schema: selectedNode.schema,
+      contextLabel: parts.join(' / '),
+    };
+  }, [selectedNode, connections]);
+
+  React.useEffect(() => {
+    if (selectedContext) {
+      updateActiveTabContext(selectedContext);
+    }
+  }, [selectedContext, updateActiveTabContext]);
 
   // 拖拽分割线状态
   const [editorHeight, setEditorHeight] = React.useState(DEFAULT_EDITOR_HEIGHT);
@@ -54,13 +98,80 @@ const SqlWorkspace: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* SQL 标签页 */}
+      <div className="flex items-center border-b border-border shrink-0 bg-muted/30 overflow-x-auto">
+        {queryTabs.map((tab, index) => (
+          <ContextMenu key={tab.id}>
+            <ContextMenuTrigger asChild onContextMenu={() => setActiveQueryTab(tab.id)}>
+              <div
+                className={
+                  'flex items-center gap-1 px-3 py-1.5 text-xs border-r border-border cursor-pointer whitespace-nowrap group ' +
+                  (tab.id === activeQueryTabId
+                    ? 'bg-background text-foreground border-b-2 border-b-primary'
+                    : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground')
+                }
+                onClick={() => setActiveQueryTab(tab.id)}
+              >
+                <span>{tab.title}</span>
+                {tab.results.length > 0 && (
+                  <span className="text-muted-foreground">({tab.results.length})</span>
+                )}
+                <button
+                  className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/80 hover:bg-accent hover:text-foreground"
+                  onClick={(e) => { e.stopPropagation(); closeQueryTab(tab.id); }}
+                  title="关闭标签页"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onClick={() => closeQueryTab(tab.id)}>
+                关闭
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => closeOtherQueryTabs(tab.id)}
+                disabled={queryTabs.length <= 1}
+              >
+                关闭其他
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                onClick={() => closeQueryTabsToRight(tab.id)}
+                disabled={index === queryTabs.length - 1}
+              >
+                关闭右侧
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => closeQueryTabsToLeft(tab.id)}
+                disabled={index === 0}
+              >
+                关闭左侧
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        ))}
+        <button
+          className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/40 shrink-0"
+          onClick={() => createQueryTab(selectedContext || undefined)}
+          title="新建 SQL 标签页"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+
       {/* SQL 编辑器（固定区域 + 可拖拽分割线） */}
       <div style={{ height: editorHeight }} className="shrink-0 flex flex-col overflow-hidden min-h-0">
-        <SqlEditor
-          connID={selectedNode?.connID || 0}
-          database={selectedNode?.database}
-          schema={selectedNode?.schema}
-        />
+        {activeTab && (
+          <SqlEditor
+            connID={activeTab.connID}
+            database={activeTab.database}
+            schema={activeTab.schema}
+            contextLabel={activeTab.contextLabel}
+            sql={activeTab.sql}
+            onSqlChange={updateActiveTabSql}
+          />
+        )}
       </div>
 
       {/* 拖拽分割线 */}

@@ -47,13 +47,26 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
   // ---- 数据库节点 ----
   database: [
     { label: '设为当前数据库', action: 'set-current-database', icon: 'Star' },
-    { label: '新建表', action: 'new-table', icon: 'TablePropertiesIcon' },
+    { label: '新建表', action: 'new-table', icon: 'TableProperties' },
     { label: '新建查询', action: 'new-query', icon: 'FileCode' },
     SEP,
     { label: '刷新', action: 'refresh', icon: 'RefreshCw' },
     { label: '查看数据库属性', action: 'database-properties', icon: 'Info' },
     SEP,
     { label: '复制数据库名', action: 'copy-name', icon: 'Copy' },
+    { label: '复制限定名称', action: 'copy-full-name', icon: 'Copy' },
+    SEP,
+    { label: '删除数据库', action: 'drop-database', icon: 'Trash2', danger: true },
+  ],
+
+  // ---- Schema 节点（PostgreSQL）----
+  schema: [
+    { label: '新建表', action: 'new-table', icon: 'TableProperties' },
+    { label: '新建查询', action: 'new-query', icon: 'FileCode' },
+    SEP,
+    { label: '刷新', action: 'refresh', icon: 'RefreshCw' },
+    SEP,
+    { label: '复制 Schema 名', action: 'copy-name', icon: 'Copy' },
     { label: '复制限定名称', action: 'copy-full-name', icon: 'Copy' },
   ],
 

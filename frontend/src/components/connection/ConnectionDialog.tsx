@@ -62,6 +62,8 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
     }));
   };
 
+  const databasePlaceholder = form.type === 'postgres' ? '留空默认 postgres' : '可选';
+
   const handleTest = async () => {
     setTesting(true);
     await testConnection({
@@ -129,7 +131,7 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
             </div>
             <div className="grid grid-cols-4 items-center gap-2">
               <Label className="text-right">数据库</Label>
-              <Input className="col-span-3" value={form.database} onChange={e => setForm(f => ({ ...f, database: e.target.value }))} placeholder="可选" />
+              <Input className="col-span-3" value={form.database} onChange={e => setForm(f => ({ ...f, database: e.target.value }))} placeholder={databasePlaceholder} />
             </div>
           </TabsContent>
 

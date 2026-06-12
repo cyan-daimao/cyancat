@@ -107,6 +107,11 @@ func (c *Conn) Ping(ctx context.Context) error {
 	return c.db.PingContext(ctx)
 }
 
+// WithDatabase MySQL 在同一连接内通过 USE 切换 database，返回当前连接即可。
+func (c *Conn) WithDatabase(ctx context.Context, database string) (driver.Conn, func(), error) {
+	return c, func() {}, nil
+}
+
 // Close 关闭连接
 func (c *Conn) Close() error {
 	return c.db.Close()

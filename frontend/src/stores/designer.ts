@@ -45,6 +45,12 @@ interface DesignerState {
   openDropTableConfirm: (ctx: { connID: number; database: string; schema: string; tableName: string }) => void;
   closeDropTableConfirm: () => void;
 
+  // 删除数据库确认弹窗
+  dropDatabaseConfirmOpen: boolean;
+  dropDatabaseContext: { connID: number; name: string } | null;
+  openDropDatabaseConfirm: (ctx: { connID: number; name: string }) => void;
+  closeDropDatabaseConfirm: () => void;
+
   // DDL 查看器对话框
   ddlViewerOpen: boolean;
   ddlViewerContext: DDLViewerContext | null;
@@ -72,4 +78,9 @@ export const useDesignerStore = create<DesignerState>((set) => ({
   dropTableContext: null,
   openDropTableConfirm: (ctx) => set({ dropTableConfirmOpen: true, dropTableContext: ctx }),
   closeDropTableConfirm: () => set({ dropTableConfirmOpen: false, dropTableContext: null }),
+
+  dropDatabaseConfirmOpen: false,
+  dropDatabaseContext: null,
+  openDropDatabaseConfirm: (ctx) => set({ dropDatabaseConfirmOpen: true, dropDatabaseContext: ctx }),
+  closeDropDatabaseConfirm: () => set({ dropDatabaseConfirmOpen: false, dropDatabaseContext: null }),
 }));

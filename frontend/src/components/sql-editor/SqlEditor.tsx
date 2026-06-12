@@ -9,6 +9,9 @@ interface SqlEditorProps {
   connID: number;
   database?: string;
   schema?: string;
+  contextLabel?: string;
+  sql: string;
+  onSqlChange: (sql: string) => void;
 }
 
 /** 基础 SQL 格式化：分号后换行、关键字大写、去除多余空行 */
@@ -36,8 +39,7 @@ function formatSql(sql: string): string {
   return result.trim() + (result.trim().endsWith(';') ? '' : '');
 }
 
-const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema }) => {
-  const [sql, setSql] = React.useState('SELECT 1;');
+const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema, contextLabel, sql, onSqlChange }) => {
   const { execute, executing } = useQueryStore();
   const editorRef = React.useRef<any>(null);
   const contextRef = React.useRef({ connID, database, schema });
@@ -139,6 +141,9 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema }) => {
           {executing ? '执行中...' : '执行'}
         </Button>
         <span className="text-xs text-muted-foreground ml-2">⌘+Enter 执行选中 / 全部</span>
+        <span className="ml-auto max-w-[45%] truncate text-xs text-muted-foreground" title={contextLabel || '未绑定执行上下文'}>
+          {contextLabel || '未绑定执行上下文'}
+        </span>
       </div>
 
       {/* 编辑器 */}
@@ -148,7 +153,7 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema }) => {
           language="sql"
           theme="vs-dark"
           value={sql}
-          onChange={v => setSql(v || '')}
+          onChange={v => onSqlChange(v || '')}
           onMount={handleEditorMount}
           options={{
             fontSize: 13,
