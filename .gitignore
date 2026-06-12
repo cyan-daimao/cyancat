@@ -1,12 +1,49 @@
+# ===== macOS =====
+.DS_Store
+.DS_store
+
+# ===== IDE / Editor =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== Go =====
+bin/
+/cyancat
+*.exe
+*.test
+*.out
+.gocache/
+vendor/
+
+# ===== Task / Cache =====
 .task
 .cache
-bin
-/cyancat
-frontend/dist
-!frontend/dist/
-!frontend/dist/index.html
-frontend/node_modules
+
+# ===== Wails 构建产物 =====
+build/bin/
+build/build/
 build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
-.gocache
-.DS_store
+
+# ===== Frontend =====
+frontend/node_modules
+frontend/dist/assets/
+frontend/dist/*.js
+frontend/dist/*.css
+# 保留 dist 目录与 index.html（wails embed 需要占位）
+!frontend/dist/
+!frontend/dist/index.html
+
+# ===== Logs / Runtime =====
+*.log
+logs/
+tmp/
+
+# ===== 本地敏感配置 =====
+.env
+.env.local
+*.key
+master.key
