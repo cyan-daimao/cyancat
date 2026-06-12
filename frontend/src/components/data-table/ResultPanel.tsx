@@ -55,7 +55,8 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
 
   const offset = (currentPage - 1) * pageSize;
   const pagedRows = rows.slice(offset, offset + pageSize);
-  const showPagination = rows.length > PAGE_SIZE_OPTIONS[0];
+  // 只要有数据就显示分页组件（即使总行数 ≤ 一页）
+  const showPagination = rows.length > 0;
 
   // 从全局 store 推断表名（INSERT SQL 用），若未传 prop
   const selectedNode = useSchemaStore(s => s.selectedNode);

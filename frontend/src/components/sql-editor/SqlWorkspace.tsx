@@ -53,9 +53,9 @@ const SqlWorkspace: React.FC = () => {
   }, [editorHeight]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* SQL 编辑器（固定区域 + 可拖拽分割线） */}
-      <div style={{ height: editorHeight }} className="shrink-0 flex flex-col">
+      <div style={{ height: editorHeight }} className="shrink-0 flex flex-col overflow-hidden min-h-0">
         <SqlEditor
           connID={selectedNode?.connID || 0}
           database={selectedNode?.database}
