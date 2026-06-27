@@ -12,7 +12,6 @@ import FieldGrid from './FieldGrid';
 import IndexGrid from './IndexGrid';
 import ForeignKeyGrid from './ForeignKeyGrid';
 import TableOptionsForm from './TableOptionsForm';
-import DDLPreviewPanel from './DDLPreviewPanel';
 import RiskConfirmDialog from './RiskConfirmDialog';
 import type {
   ColumnSpecDTO, IndexSpecDTO, ForeignKeySpecDTO,
@@ -186,8 +185,6 @@ const TableDesignerDialog: React.FC = () => {
   const [primaryKey, setPrimaryKey] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  const [ddlPreview, setDdlPreview] = React.useState('');
-  const [showPreview, setShowPreview] = React.useState(false);
   const [showRiskConfirm, setShowRiskConfirm] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState('fields');
 
@@ -199,8 +196,6 @@ const TableDesignerDialog: React.FC = () => {
   React.useEffect(() => {
     if (!tableDesignerOpen || !ctx) return;
     nextDraftId = 1;
-    setDdlPreview('');
-    setShowPreview(false);
     setActiveTab(ctx.focusTab || 'fields');
 
     if (isEdit && ctx.tableName) {
@@ -237,77 +232,6 @@ const TableDesignerDialog: React.FC = () => {
       setPrimaryKey([]);
     }
   }, [tableDesignerOpen, ctx?.connID, ctx?.database, ctx?.schema, ctx?.tableName, ctx?.mode]);
-
-  // 构建 DDL 预览
-  const buildDDL = async (): Promise<string> => {
-    if (!ctx) return '';
-    const activeFields = fields.filter(f => f.status !== 'deleted');
-    const activeIndexes = indexes.filter(i => i.status !== 'deleted');
-    const activeFKs = foreignKeys.filter(fk => fk.status !== 'deleted');
-
-    if (!isEdit) {
-      const req: CreateTableRequest = {
-        connID: ctx.connID,
-        database: ctx.database,
-        schema: ctx.schema,
-        name: options.name,
-        columns: activeFields.map(fieldToSpec),
-        primaryKey,
-        indexes: activeIndexes.map(indexDraftToSpec),
-        foreignKeys: activeFKs.map(fkDraftToSpec),
-        engine: options.engine,
-        charset: options.charset,
-        collation: options.collation,
-        comment: options.comment,
-      };
-      try {
-        return await schemaApi.previewCreateTable(req);
-      } catch (e: any) {
-        return `-- 预览失败: ${e.message}`;
-      }
-    } else {
-      const addedCols = fields.filter(f => f.status === 'new').map(fieldToSpec);
-      const droppedCols = fields.filter(f => f.status === 'deleted').map(f => f.name);
-      const modifiedCols = fields.filter(f => f.status === 'modified').map(fieldToSpec);
-      const addedIdx = indexes.filter(i => i.status === 'new').map(indexDraftToSpec);
-      const modifiedIdx = indexes.filter(i => i.status === 'modified').map(indexDraftToSpec);
-      const droppedIdx = indexes.filter(i => i.status === 'deleted').map(i => i.name);
-      const addedFKs = foreignKeys.filter(fk => fk.status === 'new').map(fkDraftToSpec);
-      const droppedFKs = foreignKeys.filter(fk => fk.status === 'deleted').map(fk => fk.name);
-
-      const req: AlterTableRequest = {
-        connID: ctx.connID,
-        database: ctx.database,
-        schema: ctx.schema,
-        name: options.name,
-        addColumns: addedCols,
-        dropColumns: droppedCols,
-        renameColumns: [],
-        modifyColumns: modifiedCols,
-        addIndexes: addedIdx,
-        modifyIndexes: modifiedIdx,
-        dropIndexes: droppedIdx,
-        addForeignKeys: addedFKs,
-        dropForeignKeys: droppedFKs,
-        engine: options.engine,
-        charset: options.charset,
-        collation: options.collation,
-        comment: options.comment,
-      };
-      try {
-        return await schemaApi.previewAlterTable(req);
-      } catch (e: any) {
-        return `-- 预览失败: ${e.message}`;
-      }
-    }
-  };
-
-  const handlePreviewSQL = async () => {
-    const ddl = await buildDDL();
-    setDdlPreview(ddl);
-    setShowPreview(true);
-    setActiveTab('ddl');
-  };
 
   // 检测破坏性操作
   const hasDestructiveOps = (): boolean => {
@@ -415,7 +339,6 @@ const TableDesignerDialog: React.FC = () => {
                 <TabsTrigger value="indexes">索引</TabsTrigger>
                 <TabsTrigger value="foreignKeys">外键</TabsTrigger>
                 <TabsTrigger value="options">选项</TabsTrigger>
-                <TabsTrigger value="ddl">SQL 预览</TabsTrigger>
               </TabsList>
 
               <div className="flex-1 overflow-auto mt-2">
@@ -454,13 +377,6 @@ const TableDesignerDialog: React.FC = () => {
                     readOnly={isView || isEdit}
                   />
                 </TabsContent>
-
-                <TabsContent value="ddl" className="mt-0">
-                  <DDLPreviewPanel
-                    ddl={ddlPreview}
-                    onGenerate={handlePreviewSQL}
-                  />
-                </TabsContent>
               </div>
             </Tabs>
           )}
@@ -471,9 +387,6 @@ const TableDesignerDialog: React.FC = () => {
             </Button>
             {!isView && (
               <>
-                <Button variant="outline" onClick={handlePreviewSQL} disabled={saving}>
-                  预览 SQL
-                </Button>
                 <Button onClick={handleSave} disabled={saving || (!isEdit && !options.name.trim())}>
                   {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
                   保存
@@ -488,7 +401,7 @@ const TableDesignerDialog: React.FC = () => {
         open={showRiskConfirm}
         onOpenChange={setShowRiskConfirm}
         destructiveOps={getDestructiveOps()}
-        ddl={ddlPreview}
+        ddl=""
         onConfirm={() => {
           setShowRiskConfirm(false);
           doSave();

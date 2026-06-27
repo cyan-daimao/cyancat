@@ -43,16 +43,18 @@ const SqlWorkspace: React.FC = () => {
   const selectedContext = React.useMemo<QueryTabContext | null>(() => {
     if (!selectedNode) return null;
     const conn = connections.find(c => c.id === selectedNode.connID);
+    const database = conn?.type === 'sqlite' ? (selectedNode.database || 'main') : selectedNode.database;
+    const schema = conn?.type === 'sqlite' ? (selectedNode.schema || 'main') : selectedNode.schema;
     const parts = [conn?.name || `连接 ${selectedNode.connID}`];
-    if (selectedNode.database) parts.push(selectedNode.database);
-    if (selectedNode.schema && selectedNode.schema !== selectedNode.database) {
-      parts.push(selectedNode.schema);
+    if (database) parts.push(database);
+    if (schema && schema !== database) {
+      parts.push(schema);
     }
     return {
       connID: selectedNode.connID,
       connectionType: conn?.type,
-      database: selectedNode.database,
-      schema: selectedNode.schema,
+      database,
+      schema,
       contextLabel: parts.join(' / '),
     };
   }, [selectedNode, connections]);

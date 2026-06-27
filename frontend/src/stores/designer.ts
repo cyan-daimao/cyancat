@@ -9,7 +9,7 @@ export interface TableDesignerContext {
   schema: string;
   tableName?: string;       // edit/view 模式必填
   focusField?: string;      // 字段聚焦
-  focusTab?: 'fields' | 'indexes' | 'foreignKeys' | 'options' | 'ddl';
+  focusTab?: 'fields' | 'indexes' | 'foreignKeys' | 'options';
   initialDetail?: TableDetailDTO | null;
 }
 

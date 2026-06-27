@@ -35,6 +35,18 @@ function renderIcon(name?: string): React.ReactNode {
   return <Comp className="h-4 w-4" />;
 }
 
+function filterMenuItemsForConnectionType(items: MenuItemDef[], connectionType?: string): MenuItemDef[] {
+  return items
+    .filter(item => {
+      if (connectionType !== 'sqlite') return true;
+      return item.action !== 'new-database' && item.action !== 'drop-database';
+    })
+    .map(item => item.children
+      ? { ...item, children: filterMenuItemsForConnectionType(item.children, connectionType) }
+      : item
+    );
+}
+
 const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, children }) => {
   const { setSelectedNode, loadDatabases, loadSchemas, loadTables, loadTableDetail, resetTree } = useSchemaStore();
   const { openConnIds, openConnection, closeConnection, connections } = useConnectionStore();
@@ -48,7 +60,8 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
   const { addEmptyResult, execute } = useQueryStore();
 
   const isConnOpen = openConnIds.has(node.connID);
-  const menuItems = getMenuItemsForNode(node);
+  const connectionType = connections.find(conn => conn.id === node.connID)?.type;
+  const menuItems = filterMenuItemsForConnectionType(getMenuItemsForNode(node), connectionType);
   const menuCtx: MenuContext = { node, isConnOpen };
 
   // ---- 通用工具 ----
@@ -71,26 +84,42 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
     return parts.join('.');
   };
 
-  const getConnectionType = () => connections.find(conn => conn.id === node.connID)?.type;
+  const getConnectionType = () => connectionType;
   const queryContext = () => {
     const conn = connections.find(c => c.id === node.connID);
+    const database = connectionType === 'sqlite'
+      ? (node.database || 'main')
+      : node.database;
+    const schema = connectionType === 'sqlite'
+      ? (node.schema || 'main')
+      : node.schema;
     const parts = [conn?.name || `连接 ${node.connID}`];
-    if (node.database) parts.push(node.database);
-    if (node.schema && node.schema !== node.database) parts.push(node.schema);
+    if (database) parts.push(database);
+    if (schema && schema !== database) parts.push(schema);
     return {
       connID: node.connID,
       connectionType: conn?.type,
-      database: node.database,
-      schema: node.schema,
+      database,
+      schema,
       contextLabel: parts.join(' / '),
     };
   };
-  const quoteIdent = (name: string): string => getConnectionType() === 'postgres' ? `"${name.split('"').join('""')}"` : `\`${name}\``;
-  const defaultSchema = (): string => getConnectionType() === 'postgres' ? 'public' : node.database!;
+  const quoteIdent = (name: string): string =>
+    getConnectionType() === 'postgres' || getConnectionType() === 'sqlite'
+      ? `"${name.split('"').join('""')}"`
+      : `\`${name}\``;
+  const defaultSchema = (): string => {
+    if (getConnectionType() === 'postgres') return 'public';
+    if (getConnectionType() === 'sqlite') return 'main';
+    return node.database!;
+  };
   const tableScope = (): string => node.schema || defaultSchema();
   const qualifiedTableName = (): string => {
     if (getConnectionType() === 'postgres') {
       return `${quoteIdent(tableScope())}.${quoteIdent(node.tableName!)}`;
+    }
+    if (getConnectionType() === 'sqlite') {
+      return `${quoteIdent('main')}.${quoteIdent(node.tableName!)}`;
     }
     return `${quoteIdent(node.database!)}.${quoteIdent(node.tableName!)}`;
   };

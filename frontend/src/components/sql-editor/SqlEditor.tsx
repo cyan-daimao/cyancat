@@ -14,6 +14,122 @@ interface SqlEditorProps {
   onSqlChange: (sql: string) => void;
 }
 
+const SQL_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'IS', 'NULL',
+  'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+  'CREATE', 'TABLE', 'DROP', 'ALTER', 'INDEX', 'VIEW', 'DATABASE',
+  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'OUTER', 'ON', 'AS',
+  'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'DISTINCT',
+  'UNION', 'ALL', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'DEFAULT', 'CONSTRAINT',
+  'IF', 'EXISTS', 'BETWEEN',
+];
+
+let completionProviderRegistered = false;
+let latestHintContext: SqlHintContext = { connID: 0 };
+
+function quoteIdentifier(name: string, connectionType?: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name;
+  if (connectionType === 'postgres' || connectionType === 'sqlite') return `"${name.split('"').join('""')}"`;
+  return `\`${name.split('`').join('``')}\``;
+}
+
+function completionRange(model: any, position: any) {
+  const word = model.getWordUntilPosition(position);
+  return {
+    startLineNumber: position.lineNumber,
+    endLineNumber: position.lineNumber,
+    startColumn: word.startColumn,
+    endColumn: word.endColumn,
+  };
+}
+
+function detectMemberAccess(model: any, position: any): string | null {
+  const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+  const match = line.match(/(?:`([^`]+)`|"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\.\s*([A-Za-z_][A-Za-z0-9_]*)?$/);
+  return match ? (match[1] || match[2] || match[3] || null) : null;
+}
+
+function registerSqlCompletionProvider(monaco: any) {
+  if (completionProviderRegistered) return;
+  completionProviderRegistered = true;
+
+  monaco.languages.registerCompletionItemProvider('sql', {
+    triggerCharacters: ['.', '`', '"'],
+    provideCompletionItems: async (model: any, position: any) => {
+      const range = completionRange(model, position);
+      const ctx = latestHintContext;
+      const store = useSqlHintStore.getState();
+      const memberTable = detectMemberAccess(model, position);
+
+      if (memberTable && ctx.connID && ctx.database) {
+        const columns = await store.ensureTableColumns(ctx, memberTable);
+        return {
+          suggestions: columns.map((column, index) => ({
+            label: column.name,
+            kind: monaco.languages.CompletionItemKind.Field,
+            insertText: quoteIdentifier(column.name, ctx.connectionType),
+            range,
+            detail: column.databaseType,
+            documentation: [
+              column.isPrimary ? 'Primary Key' : '',
+              column.nullable ? 'Nullable' : 'Not Null',
+              column.comment || '',
+            ].filter(Boolean).join('\n'),
+            sortText: `1_${String(index).padStart(4, '0')}_${column.name}`,
+          })),
+        };
+      }
+
+      const keywordSuggestions = SQL_KEYWORDS.map((keyword, index) => ({
+        label: keyword,
+        kind: monaco.languages.CompletionItemKind.Keyword,
+        insertText: keyword,
+        range,
+        detail: 'SQL keyword',
+        sortText: `3_${String(index).padStart(4, '0')}_${keyword}`,
+      }));
+
+      if (!ctx.connID || !ctx.database) {
+        return { suggestions: keywordSuggestions };
+      }
+
+      const catalog = await store.ensureCatalog(ctx);
+      if (!catalog) {
+        return { suggestions: keywordSuggestions };
+      }
+
+      const tableSuggestions = catalog.tables.map((table, index) => ({
+        label: table.name,
+        kind: monaco.languages.CompletionItemKind.Struct,
+        insertText: quoteIdentifier(table.name, ctx.connectionType),
+        range,
+        detail: 'table',
+        documentation: table.comment || '',
+        sortText: `1_${String(index).padStart(4, '0')}_${table.name}`,
+      }));
+
+      const viewSuggestions = catalog.views.map((view, index) => ({
+        label: view.name,
+        kind: monaco.languages.CompletionItemKind.Module,
+        insertText: quoteIdentifier(view.name, ctx.connectionType),
+        range,
+        detail: 'view',
+        documentation: view.definition || '',
+        sortText: `2_${String(index).padStart(4, '0')}_${view.name}`,
+      }));
+
+      return {
+        suggestions: [
+          ...tableSuggestions,
+          ...viewSuggestions,
+          ...keywordSuggestions,
+        ],
+      };
+    },
+  });
+}
+
 /** 基础 SQL 格式化：分号后换行、关键字大写、去除多余空行 */
 function formatSql(sql: string): string {
   const KEYWORDS = [

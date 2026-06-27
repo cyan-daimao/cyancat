@@ -39,7 +39,7 @@ type Connection struct {
 	ID int64
 	// Name 连接名称
 	Name string
-	// Type 驱动类型（mysql / postgres）
+	// Type 驱动类型（mysql / postgres / sqlite）
 	Type driver.DriverType
 	// Host 主机地址
 	Host string
@@ -161,11 +161,13 @@ func (c *Connection) normalize() {
 			c.Port = 3306
 		case driver.PostgreSQL:
 			c.Port = 5432
+		case driver.SQLite:
+			c.Port = 0
 		}
 	}
 
 	// 默认主机
-	if c.Host == "" {
+	if c.Host == "" && c.Type != driver.SQLite {
 		c.Host = "127.0.0.1"
 	}
 }
@@ -178,13 +180,18 @@ func (c *Connection) validate() error {
 		return fmt.Errorf("connection: invalid driver type %q", c.Type)
 	}
 	if c.Host == "" {
+		if c.Type == driver.SQLite {
+			return errors.New("connection: sqlite database file is required")
+		}
 		return errors.New("connection: host is required")
 	}
-	if c.Port <= 0 || c.Port > 65535 {
-		return fmt.Errorf("connection: port must be between 1 and 65535, got %d", c.Port)
-	}
-	if c.User == "" {
-		return errors.New("connection: user is required")
+	if c.Type != driver.SQLite {
+		if c.Port <= 0 || c.Port > 65535 {
+			return fmt.Errorf("connection: port must be between 1 and 65535, got %d", c.Port)
+		}
+		if c.User == "" {
+			return errors.New("connection: user is required")
+		}
 	}
 	if c.Group != "" && !validGroups[c.Group] {
 		return fmt.Errorf("connection: invalid group %q", c.Group)

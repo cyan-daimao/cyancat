@@ -11,7 +11,7 @@ type ConnectionDO struct {
 	ID int64 `gorm:"column:id; primaryKey; autoIncrement; comment:'主键id'"`
 	// Name 连接名称
 	Name string `gorm:"column:name; not null; size:128; uniqueIndex:uk_name_deleted; comment:'连接名称'"`
-	// Type 驱动类型（mysql / postgres）
+	// Type 驱动类型（mysql / postgres / sqlite）
 	Type string `gorm:"column:type; not null; size:32; index:idx_type; comment:'驱动类型'"`
 	// Host 主机地址
 	Host string `gorm:"column:host; not null; size:255; comment:'主机地址'"`

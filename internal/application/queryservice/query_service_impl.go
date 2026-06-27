@@ -53,8 +53,7 @@ func (s *QueryServiceImpl) Execute(cmd *ExecuteCmd) (*QueryResultBO, error) {
 		maxRows = 1000
 	}
 
-	// 多语句拆分：仅取最后一条非空语句作为主结果（其它语句也执行，但只返回最后一条的结果）
-	// V1.0 简化版：用分号粗暴拆分，未来用真正的 SQL parser
+	// 多语句拆分：用分号拆分，仅取最后一条非空语句作为主结果
 	stmts := splitStatements(sqlText)
 	if len(stmts) == 0 {
 		return nil, errors.New("queryservice: no executable statement")
@@ -87,30 +86,19 @@ func (s *QueryServiceImpl) Execute(cmd *ExecuteCmd) (*QueryResultBO, error) {
 		return nil, err
 	}
 
-	// 前 N-1 条用 Execute（忽略结果集），最后一条返回给前端
-	for idx, stmt := range stmts {
-		isLast := idx == len(stmts)-1
-		stmtSQL := stripTrailingSemicolon(stmt)
-		if stmtSQL == "" {
-			continue
-		}
-
-		// 最后一条带 LIMIT 兜底
-		finalSQL := stmtSQL
-		truncated := false
-		if isLast && shouldAddLimit(stmtSQL) {
-			finalSQL = stmtSQL + " LIMIT " + itoa(maxRows)
-			truncated = true
-		}
-
-		res, err := execConn.Execute(ctx, finalSQL)
+	// 如果所有语句都是非查询（DDL/DML/SET/COMMENT 等），将整段 SQL 作为 batch 发送。
+	// 这样 pgx 会自动走简单查询协议，正确处理 SET search_path、COMMENT ON 等
+	// 扩展协议下无法执行的工具类语句。
+	// 注意：仅对 PostgreSQL 启用 batch 模式；MySQL 驱动默认不支持 multiStatements。
+	driverType, _ := s.sessionMgr.DriverType(cmd.ConnID)
+	if driverType == driver.PostgreSQL && allNonQuery(stmts) {
+		res, err := execConn.Execute(ctx, sqlText)
 		if err != nil {
-			s.recordError(cmd.ConnID, stmtSQL, err)
-			// 记录失败历史
+			s.recordError(cmd.ConnID, sqlText, err)
 			if s.historyRepo != nil {
 				_ = s.historyRepo.Save(&QueryHistoryBO{
 					ConnID:       cmd.ConnID,
-					SQL:          stmtSQL,
+					SQL:          sqlText,
 					Status:       "error",
 					ErrorMessage: err.Error(),
 					DurationMs:   time.Since(start).Milliseconds(),
@@ -119,20 +107,61 @@ func (s *QueryServiceImpl) Execute(cmd *ExecuteCmd) (*QueryResultBO, error) {
 			}
 			return nil, err
 		}
-
-		if !isLast {
-			continue
-		}
-
 		result = &QueryResultBO{
 			ConnID:       cmd.ConnID,
-			SQL:          finalSQL,
+			SQL:          sqlText,
 			Columns:      ToColumnBOs(res.Columns),
 			Rows:         res.Rows,
 			RowsAffected: res.RowsAffected,
 			LastInsertID: res.LastInsertID,
 			Duration:     time.Since(start),
-			Truncated:    truncated && int64(len(res.Rows)) >= int64(maxRows),
+		}
+	} else {
+		// 包含查询语句：逐条执行，仅最后一条返回结果，且自动追加 LIMIT 兜底
+		for idx, stmt := range stmts {
+			isLast := idx == len(stmts)-1
+			stmtSQL := stripTrailingSemicolon(stmt)
+			if stmtSQL == "" {
+				continue
+			}
+
+			finalSQL := stmtSQL
+			truncated := false
+			if isLast && shouldAddLimit(stmtSQL) {
+				finalSQL = stmtSQL + " LIMIT " + itoa(maxRows)
+				truncated = true
+			}
+
+			res, err := execConn.Execute(ctx, finalSQL)
+			if err != nil {
+				s.recordError(cmd.ConnID, stmtSQL, err)
+				if s.historyRepo != nil {
+					_ = s.historyRepo.Save(&QueryHistoryBO{
+						ConnID:       cmd.ConnID,
+						SQL:          stmtSQL,
+						Status:       "error",
+						ErrorMessage: err.Error(),
+						DurationMs:   time.Since(start).Milliseconds(),
+						ExecutedAt:   time.Now(),
+					})
+				}
+				return nil, err
+			}
+
+			if !isLast {
+				continue
+			}
+
+			result = &QueryResultBO{
+				ConnID:       cmd.ConnID,
+				SQL:          finalSQL,
+				Columns:      ToColumnBOs(res.Columns),
+				Rows:         res.Rows,
+				RowsAffected: res.RowsAffected,
+				LastInsertID: res.LastInsertID,
+				Duration:     time.Since(start),
+				Truncated:    truncated && int64(len(res.Rows)) >= int64(maxRows),
+			}
 		}
 	}
 
@@ -243,15 +272,109 @@ func (s *QueryServiceImpl) recordError(connID int64, sqlText string, err error) 
 
 // --- 辅助 ---
 
-// splitStatements 按 ; 粗暴拆分 SQL（V1.0 简化版，不处理字符串/注释中的分号）
+// splitStatements 按 ; 拆分 SQL 语句，正确处理字符串、标识符引用和注释中的分号。
 func splitStatements(sqlText string) []string {
-	parts := strings.Split(sqlText, ";")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if strings.TrimSpace(p) != "" {
-			result = append(result, p)
+	var (
+		result []string
+		start  = 0
+		i      = 0
+		n      = len(sqlText)
+	)
+
+	for i < n {
+		c := sqlText[i]
+
+		switch {
+		// 单引号字符串：跳过 '' 转义
+		case c == '\'':
+			i++ // skip opening quote
+			for i < n {
+				if sqlText[i] == '\'' {
+					// 检查是否是转义 ''
+					if i+1 < n && sqlText[i+1] == '\'' {
+						i += 2 // skip escaped ''
+						continue
+					}
+					i++ // skip closing quote
+					break
+				}
+				i++
+			}
+
+		// 双引号标识符：跳过 "" 转义
+		case c == '"':
+			i++ // skip opening quote
+			for i < n {
+				if sqlText[i] == '"' {
+					if i+1 < n && sqlText[i+1] == '"' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+
+		// PostgreSQL 美元引用: $tag$...$tag$
+		case c == '$':
+			// 提取 tag（可能为空）
+			tagStart := i + 1
+			for tagStart < n && sqlText[tagStart] != '$' {
+				tagStart++
+			}
+			if tagStart < n { // 找到配对的 $，即 $tag$
+				tagEnd := tagStart + 1 // 跳过闭合 $
+				tag := sqlText[i+1 : tagStart]
+				// 查找结束标记 $tag$
+				closeTag := "$" + tag + "$"
+				closeIdx := strings.Index(sqlText[tagEnd:], closeTag)
+				if closeIdx >= 0 {
+					i = tagEnd + closeIdx + len(closeTag)
+					continue
+				}
+			}
+			i++
+
+		// 行注释 --
+		case c == '-' && i+1 < n && sqlText[i+1] == '-':
+			// 跳到行尾
+			i += 2
+			for i < n && sqlText[i] != '\n' && sqlText[i] != '\r' {
+				i++
+			}
+
+		// 块注释 /*
+		case c == '/' && i+1 < n && sqlText[i+1] == '*':
+			i += 2
+			for i+1 < n {
+				if sqlText[i] == '*' && sqlText[i+1] == '/' {
+					i += 2
+					break
+				}
+				i++
+			}
+
+		// 分号 = 语句边界
+		case c == ';':
+			part := strings.TrimSpace(sqlText[start:i])
+			if part != "" {
+				result = append(result, part)
+			}
+			i++
+			start = i
+
+		default:
+			i++
 		}
 	}
+
+	// 最后一段（末尾没有分号的情况）
+	part := strings.TrimSpace(sqlText[start:])
+	if part != "" {
+		result = append(result, part)
+	}
+
 	return result
 }
 
@@ -261,6 +384,49 @@ func stripTrailingSemicolon(sql string) string {
 	if strings.HasSuffix(s, ";") {
 		s = strings.TrimSuffix(s, ";")
 		s = strings.TrimSpace(s)
+	}
+	return s
+}
+
+// allNonQuery 判断所有语句是否都是非查询（DDL/DML/SET/COMMENT 等不返回结果集的语句）。
+// 当所有语句都是非查询时，整段 SQL 可作为 batch 发送，让 pgx 走简单查询协议，
+// 从而正确执行 SET search_path、COMMENT ON 等扩展协议不支持的工具类语句。
+func allNonQuery(stmts []string) bool {
+	for _, stmt := range stmts {
+		trimmed := skipLeadingNoise(stmt)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		for _, prefix := range []string{"select", "with", "show", "desc", "explain"} {
+			if strings.HasPrefix(lower, prefix) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// skipLeadingNoise 跳过 SQL 语句前面的空白和注释，返回第一个有效关键字开始的部分。
+func skipLeadingNoise(s string) string {
+	s = strings.TrimSpace(s)
+	for len(s) > 0 {
+		switch {
+		case strings.HasPrefix(s, "--"):
+			idx := strings.IndexByte(s, '\n')
+			if idx < 0 {
+				return ""
+			}
+			s = strings.TrimSpace(s[idx+1:])
+		case strings.HasPrefix(s, "/*"):
+			idx := strings.Index(s, "*/")
+			if idx < 0 {
+				return ""
+			}
+			s = strings.TrimSpace(s[idx+2:])
+		default:
+			return s
+		}
 	}
 	return s
 }

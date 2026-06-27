@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"cyancat/internal/adapter"
+	adapterhttp "cyancat/internal/adapter/http"
 	"cyancat/internal/application/connectionservice"
 	"cyancat/internal/application/queryservice"
 	"cyancat/internal/application/schemaservice"
@@ -16,6 +17,7 @@ import (
 	"cyancat/internal/infra/driver"
 	mysqldriver "cyancat/internal/infra/driver/mysql"
 	postgresdriver "cyancat/internal/infra/driver/postgres"
+	sqlitedriver "cyancat/internal/infra/driver/sqlite"
 	"cyancat/internal/infra/eventbus"
 	"cyancat/internal/infra/keychain"
 	"cyancat/internal/infra/logger"
@@ -36,6 +38,7 @@ func main() {
 	// 2. 注册数据库驱动
 	driver.Register(mysqldriver.New())
 	driver.Register(postgresdriver.New())
+	driver.Register(sqlitedriver.New())
 
 	// 3. 初始化本地 SQLite
 	dbPath := dbPath()
@@ -80,6 +83,8 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			// 把 Wails ctx 注入 EventBus，让后端能向前端推流式数据
 			eventbus.Init(ctx)
+			adapterhttp.SetExportAPIContext(app.ExportAPI, ctx)
+			adapterhttp.SetFileDialogAPIContext(app.FileDialogAPI, ctx)
 			logger.L().Info().Msg("cyancat started")
 		},
 		OnShutdown: func(ctx context.Context) {
@@ -88,12 +93,16 @@ func main() {
 				logger.L().Warn().Err(err).Msg("close sessions on shutdown")
 			}
 			logger.L().Info().Msg("cyancat shutdown")
+			// 刷新并关闭日志文件，保证 Windows GUI 子系统下日志完整落盘
+			logger.Close()
 		},
 		Bind: []interface{}{
 			app,
 			app.ConnectionAPI,
 			app.QueryAPI,
 			app.SchemaAPI,
+			app.ExportAPI,
+			app.FileDialogAPI,
 		},
 	}); err != nil {
 		logger.L().Fatal().Err(err).Msg("wails run failed")

@@ -16,6 +16,10 @@ type App struct {
 	QueryAPI *http.QueryAPI
 	// SchemaAPI 元数据查询 API
 	SchemaAPI *http.SchemaAPI
+	// ExportAPI 文件导出 API
+	ExportAPI *http.ExportAPI
+	// FileDialogAPI 文件选择 API
+	FileDialogAPI *http.FileDialogAPI
 }
 
 // NewApp 构造 App
@@ -28,5 +32,7 @@ func NewApp(
 		ConnectionAPI: http.NewConnectionAPI(connectionService),
 		QueryAPI:      http.NewQueryAPI(queryService),
 		SchemaAPI:     http.NewSchemaAPI(schemaService),
+		ExportAPI:     http.NewExportAPI(),
+		FileDialogAPI: http.NewFileDialogAPI(),
 	}
 }

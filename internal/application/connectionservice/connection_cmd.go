@@ -6,7 +6,7 @@ import "cyancat/internal/infra/driver"
 type CreateConnectionCmd struct {
 	// Name 连接名称
 	Name string
-	// Type 驱动类型（mysql / postgres）
+	// Type 驱动类型（mysql / postgres / sqlite）
 	Type driver.DriverType
 	// Host 主机地址
 	Host string
@@ -30,7 +30,7 @@ type CreateConnectionCmd struct {
 type UpdateConnectionCmd struct {
 	// Name 连接名称
 	Name string
-	// Type 驱动类型（mysql / postgres）
+	// Type 驱动类型（mysql / postgres / sqlite）
 	Type driver.DriverType
 	// Host 主机地址
 	Host string
