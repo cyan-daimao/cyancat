@@ -12,6 +12,18 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { toast } from '@/components/ui/use-toast';
+
+const copySql = async (sql?: string) => {
+  if (!sql) return;
+  try {
+    await navigator.clipboard.writeText(sql);
+    toast({ title: '已复制 SQL' });
+  } catch (e: any) {
+    toast({ title: '复制失败', description: e?.message, variant: 'destructive' });
+  }
+};
 
 const MIN_EDITOR_HEIGHT = 80;
 const MAX_EDITOR_HEIGHT = 600;
@@ -195,40 +207,55 @@ const SqlWorkspace: React.FC = () => {
             {/* Tab 栏 */}
             <div className="flex items-center border-b border-border shrink-0 bg-muted/30 overflow-x-auto">
               {results.map((r, i) => (
-                <ContextMenu key={i}>
-                  <ContextMenuTrigger asChild>
-                    <div
-                      className={
-                        'flex items-center gap-1 px-3 py-1.5 text-xs border-r border-border cursor-pointer whitespace-nowrap group ' +
-                        (i === activeResultIndex
-                          ? 'bg-background text-foreground border-b-2 border-b-primary'
-                          : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground')
-                      }
-                      onClick={() => setActiveResult(i)}
-                    >
-                      <span>查询 {i + 1}</span>
-                      <span className="text-muted-foreground">({r.rows?.length || 0} 行)</span>
-                      <button
-                        className="ml-1 p-0.5 rounded hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => { e.stopPropagation(); closeResult(i); }}
-                        title="关闭"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem onClick={() => closeResult(i)}>
-                      关闭
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={() => closeOtherResults(i)}>
-                      关闭其他
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={() => closeAllResults()}>
-                      关闭全部
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
+                <Tooltip key={i} delayDuration={300}>
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={
+                            'flex items-center gap-1 px-3 py-1.5 text-xs border-r border-border cursor-pointer whitespace-nowrap group ' +
+                            (i === activeResultIndex
+                              ? 'bg-background text-foreground border-b-2 border-b-primary'
+                              : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground')
+                          }
+                          onClick={() => setActiveResult(i)}
+                        >
+                          <span>查询 {i + 1}</span>
+                          <span className="text-muted-foreground">({r.rows?.length || 0} 行)</span>
+                          <button
+                            className="ml-1 p-0.5 rounded hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => { e.stopPropagation(); closeResult(i); }}
+                            title="关闭"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </TooltipTrigger>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onClick={() => copySql(r.sql)}>
+                        复制 SQL
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem onClick={() => closeResult(i)}>
+                        关闭
+                      </ContextMenuItem>
+                      <ContextMenuItem onClick={() => closeOtherResults(i)}>
+                        关闭其他
+                      </ContextMenuItem>
+                      <ContextMenuItem onClick={() => closeAllResults()}>
+                        关闭全部
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                  {r.sql && (
+                    <TooltipContent side="bottom" align="start" className="max-w-[560px]">
+                      <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed max-h-[240px] overflow-auto">
+                        {r.sql}
+                      </pre>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
               ))}
             </div>
 

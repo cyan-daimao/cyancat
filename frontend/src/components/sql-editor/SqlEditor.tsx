@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import { Button } from '@/components/ui/button';
 import { Play, Square } from 'lucide-react';
 import { useQueryStore } from '@/stores/query';
+import { SqlHintContext, useSqlHintStore } from '@/stores/sql-hints';
 import { toast } from '@/components/ui/use-toast';
 
 interface SqlEditorProps {

@@ -9,5 +9,12 @@
   "author": {
     "name": "cyancat Dev",
     "email": "dev@cyancat.app"
+  },
+  "info": {
+    "companyName": "cyancat",
+    "productName": "cyancat",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 cyancat",
+    "comments": "A modern cross-platform database client"
   }
 }

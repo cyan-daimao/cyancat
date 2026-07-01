@@ -36,6 +36,9 @@ frontend/dist/*.css
 # 保留 dist 目录与 index.html（wails embed 需要占位）
 !frontend/dist/
 !frontend/dist/index.html
+# Wails 自动生成的 JS/TS 绑定与构建校验产物（由 `wails generate module` 重新生成）
+frontend/wailsjs/
+frontend/package.json.md5
 
 # ===== Logs / Runtime =====
 *.log
