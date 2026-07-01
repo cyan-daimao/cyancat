@@ -18,6 +18,7 @@ import { schemaApi } from '@/lib/api/schema';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import type { TreeNode } from '@/stores/schema';
+import { resolveDialect, quoteIdent as quoteIdentShared, qualifiedTableName as qualifiedTableNameShared } from '@/lib/sql-ident';
 import { getMenuItemsForNode, type MenuItemDef, type MenuContext } from './context-menus';
 
 interface ObjectTreeContextMenuProps {
@@ -57,7 +58,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
     openDropTableConfirm,
     openDropDatabaseConfirm,
   } = useDesignerStore();
-  const { addEmptyResult, execute } = useQueryStore();
+  const { addEmptyResult, openQueryTab, execute } = useQueryStore();
 
   const isConnOpen = openConnIds.has(node.connID);
   const connectionType = connections.find(conn => conn.id === node.connID)?.type;
@@ -85,6 +86,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
   };
 
   const getConnectionType = () => connectionType;
+  const dialect = () => resolveDialect(connectionType);
   const queryContext = () => {
     const conn = connections.find(c => c.id === node.connID);
     const database = connectionType === 'sqlite'
@@ -104,25 +106,19 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
       contextLabel: parts.join(' / '),
     };
   };
-  const quoteIdent = (name: string): string =>
-    getConnectionType() === 'postgres' || getConnectionType() === 'sqlite'
-      ? `"${name.split('"').join('""')}"`
-      : `\`${name}\``;
+  const quoteIdent = (name: string): string => quoteIdentShared(name, dialect());
   const defaultSchema = (): string => {
-    if (getConnectionType() === 'postgres') return 'public';
-    if (getConnectionType() === 'sqlite') return 'main';
+    if (dialect() === 'postgres') return 'public';
+    if (dialect() === 'sqlite') return 'main';
     return node.database!;
   };
   const tableScope = (): string => node.schema || defaultSchema();
-  const qualifiedTableName = (): string => {
-    if (getConnectionType() === 'postgres') {
-      return `${quoteIdent(tableScope())}.${quoteIdent(node.tableName!)}`;
-    }
-    if (getConnectionType() === 'sqlite') {
-      return `${quoteIdent('main')}.${quoteIdent(node.tableName!)}`;
-    }
-    return `${quoteIdent(node.database!)}.${quoteIdent(node.tableName!)}`;
-  };
+  const qualifiedTableName = (): string => qualifiedTableNameShared({
+    dialect: dialect(),
+    database: node.database,
+    schema: tableScope(),
+    table: node.tableName!,
+  });
 
   /** 统一 action 派发 */
   const dispatchAction = async (action: string) => {
@@ -191,6 +187,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
       }
       case 'open-table': {
         const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 500;`;
+        openQueryTab({ title: node.tableName, sql, context: queryContext() });
         await execute({
           connID: node.connID,
           sql,
@@ -241,6 +238,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
       // ---- 视图 ----
       case 'open-view': {
         const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 500;`;
+        openQueryTab({ title: node.tableName, sql, context: queryContext() });
         await execute({
           connID: node.connID,
           sql,

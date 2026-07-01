@@ -4,10 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Play, Square } from 'lucide-react';
 import { useQueryStore } from '@/stores/query';
 import { SqlHintContext, useSqlHintStore } from '@/stores/sql-hints';
+import { quoteIdent, resolveDialect } from '@/lib/sql-ident';
 import { toast } from '@/components/ui/use-toast';
 
 interface SqlEditorProps {
   connID: number;
+  connectionType?: string;
   database?: string;
   schema?: string;
   contextLabel?: string;
@@ -29,10 +31,9 @@ const SQL_KEYWORDS = [
 let completionProviderRegistered = false;
 let latestHintContext: SqlHintContext = { connID: 0 };
 
+/** 按方言给补全插入的标识符加引号（简单名不加）。 */
 function quoteIdentifier(name: string, connectionType?: string): string {
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name;
-  if (connectionType === 'postgres' || connectionType === 'sqlite') return `"${name.split('"').join('""')}"`;
-  return `\`${name.split('`').join('``')}\``;
+  return quoteIdent(name, resolveDialect(connectionType));
 }
 
 function completionRange(model: any, position: any) {
@@ -156,10 +157,15 @@ function formatSql(sql: string): string {
   return result.trim() + (result.trim().endsWith(';') ? '' : '');
 }
 
-const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema, contextLabel, sql, onSqlChange }) => {
+const SqlEditor: React.FC<SqlEditorProps> = ({ connID, connectionType, database, schema, contextLabel, sql, onSqlChange }) => {
   const { execute, executing } = useQueryStore();
   const editorRef = React.useRef<any>(null);
   const contextRef = React.useRef({ connID, database, schema });
+
+  // 把当前激活 tab 的上下文同步给（全局单例的）补全 provider。
+  React.useEffect(() => {
+    latestHintContext = { connID, connectionType, database, schema };
+  }, [connID, connectionType, database, schema]);
 
   React.useEffect(() => {
     contextRef.current = { connID, database, schema };
@@ -201,6 +207,9 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, database, schema, context
 
   const handleEditorMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
+    // 注册 SQL 自动补全（幂等：completionProviderRegistered 防重复）
+    registerSqlCompletionProvider(monaco);
+
     // Cmd/Ctrl + Enter 执行
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,

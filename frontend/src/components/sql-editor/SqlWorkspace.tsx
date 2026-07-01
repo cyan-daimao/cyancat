@@ -179,6 +179,7 @@ const SqlWorkspace: React.FC = () => {
         {activeTab && (
           <SqlEditor
             connID={activeTab.connID}
+            connectionType={activeTab.connectionType}
             database={activeTab.database}
             schema={activeTab.schema}
             contextLabel={activeTab.contextLabel}

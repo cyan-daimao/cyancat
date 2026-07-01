@@ -56,6 +56,8 @@ interface QueryState {
 
   // 操作
   createQueryTab: (context?: QueryTabContext) => void;
+  /** 新开一个顶层 SQL 标签页（可带标题/预填 SQL/上下文），并切换为激活。 */
+  openQueryTab: (opts: { title?: string; sql?: string; context?: QueryTabContext }) => void;
   closeQueryTab: (id: string) => void;
   closeOtherQueryTabs: (id: string) => void;
   closeQueryTabsToRight: (id: string) => void;
@@ -84,6 +86,28 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   createQueryTab: (context) => set(state => {
     const tab = createQueryTab(undefined, context);
+    return {
+      queryTabs: [...state.queryTabs, tab],
+      activeQueryTabId: tab.id,
+      results: tab.results,
+      activeResultIndex: tab.activeResultIndex,
+    };
+  }),
+
+  openQueryTab: (opts) => set(state => {
+    const id = `query-${nextQueryTabId++}`;
+    const tab: QueryTab = {
+      id,
+      title: opts.title || `查询 ${nextQueryTabId - 1}`,
+      sql: opts.sql ?? 'SELECT 1;',
+      connID: opts.context?.connID || 0,
+      connectionType: opts.context?.connectionType,
+      database: opts.context?.database,
+      schema: opts.context?.schema,
+      contextLabel: opts.context?.contextLabel,
+      results: [],
+      activeResultIndex: 0,
+    };
     return {
       queryTabs: [...state.queryTabs, tab],
       activeQueryTabId: tab.id,
