@@ -12,6 +12,7 @@
 # ===== Go =====
 bin/
 /cyancat
+/build/
 *.exe
 *.test
 *.out
