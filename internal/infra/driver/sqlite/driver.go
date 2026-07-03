@@ -301,7 +301,7 @@ func scanAll(rows *sql.Rows, colCount int) ([][]any, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return driver.NormalizeRows(result), nil
 }
 
 func scanRow(rows *sql.Rows, colCount int) ([]any, error) {
@@ -315,8 +315,9 @@ func scanRow(rows *sql.Rows, colCount int) ([]any, error) {
 	}
 	for i, v := range values {
 		if b, ok := v.([]byte); ok {
-			values[i] = string(b)
+			v = string(b)
 		}
+		values[i] = driver.NormalizeValue(v)
 	}
 	return values, nil
 }

@@ -326,7 +326,7 @@ func scanAll(rows *sql.Rows, colCount int) ([][]any, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return driver.NormalizeRows(result), nil
 }
 
 // scanRow scan 单行；统一把 []byte 转 string，便于 JSON 序列化
@@ -339,11 +339,12 @@ func scanRow(rows *sql.Rows, colCount int) ([]any, error) {
 	if err := rows.Scan(scanPtrs...); err != nil {
 		return nil, fmt.Errorf("mysql: scan: %w", err)
 	}
-	// 把 []byte 转 string，方便前端展示
+	// 把 []byte 转 string，方便前端展示；超大整数转 string 避免前端精度失真
 	for i, v := range values {
 		if b, ok := v.([]byte); ok {
-			values[i] = string(b)
+			v = string(b)
 		}
+		values[i] = driver.NormalizeValue(v)
 	}
 	return values, nil
 }

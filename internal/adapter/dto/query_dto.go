@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	"cyancat/internal/application/queryservice"
@@ -58,8 +60,9 @@ type QueryResultDTO struct {
 	SQL string `json:"sql"`
 	// Columns 列定义
 	Columns []ColumnDTO `json:"columns"`
-	// Rows 结果数据
-	Rows [][]any `json:"rows"`
+	// Rows 结果数据，每个单元格统一以字符串返回，避免前端 JS Number 精度丢失；
+	// nil 表示 SQL NULL。
+	Rows [][]*string `json:"rows"`
 	// RowsAffected 受影响行数
 	RowsAffected int64 `json:"rowsAffected"`
 	// LastInsertID 最后插入 ID
@@ -117,12 +120,73 @@ func ToQueryResultDTO(bo *queryservice.QueryResultBO) *QueryResultDTO {
 		ConnID:       bo.ConnID,
 		SQL:          bo.SQL,
 		Columns:      ToColumnDTOs(bo.Columns),
-		Rows:         bo.Rows,
+		Rows:         ToStringRows(bo.Rows),
 		RowsAffected: bo.RowsAffected,
 		LastInsertID: bo.LastInsertID,
 		DurationMs:   bo.Duration.Milliseconds(),
 		Truncated:    bo.Truncated,
 	}
+}
+
+// ToStringRows 把驱动层返回的 [][]any 统一格式化为 [][]*string，
+// nil 单元格保持 nil（前端展示为 NULL），其余类型按数据库直观格式转为字符串。
+func ToStringRows(rows [][]any) [][]*string {
+	if len(rows) == 0 {
+		return make([][]*string, 0)
+	}
+	result := make([][]*string, len(rows))
+	for i, row := range rows {
+		result[i] = make([]*string, len(row))
+		for j, v := range row {
+			result[i][j] = formatCell(v)
+		}
+	}
+	return result
+}
+
+// formatCell 把任意数据库值格式化为 *string；nil 返回 nil。
+func formatCell(v any) *string {
+	if v == nil {
+		return nil
+	}
+	var s string
+	switch n := v.(type) {
+	case string:
+		s = n
+	case []byte:
+		s = string(n)
+	case int:
+		s = strconv.FormatInt(int64(n), 10)
+	case int8:
+		s = strconv.FormatInt(int64(n), 10)
+	case int16:
+		s = strconv.FormatInt(int64(n), 10)
+	case int32:
+		s = strconv.FormatInt(int64(n), 10)
+	case int64:
+		s = strconv.FormatInt(n, 10)
+	case uint:
+		s = strconv.FormatUint(uint64(n), 10)
+	case uint8:
+		s = strconv.FormatUint(uint64(n), 10)
+	case uint16:
+		s = strconv.FormatUint(uint64(n), 10)
+	case uint32:
+		s = strconv.FormatUint(uint64(n), 10)
+	case uint64:
+		s = strconv.FormatUint(n, 10)
+	case float32:
+		s = strconv.FormatFloat(float64(n), 'f', -1, 32)
+	case float64:
+		s = strconv.FormatFloat(n, 'f', -1, 64)
+	case bool:
+		s = strconv.FormatBool(n)
+	case time.Time:
+		s = n.Format("2006-01-02 15:04:05.999999999")
+	default:
+		s = fmt.Sprintf("%v", v)
+	}
+	return &s
 }
 
 // ToExecuteQueryCmd Request -> Cmd

@@ -337,11 +337,12 @@ func scanRowPG(rows pgx.Rows) ([]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: scan: %w", err)
 	}
-	// 把 []byte 转 string
+	// 把 []byte 转 string；超大整数转 string 避免前端精度失真
 	for i, v := range values {
 		if b, ok := v.([]byte); ok {
-			values[i] = string(b)
+			v = string(b)
 		}
+		values[i] = driver.NormalizeValue(v)
 	}
 	return values, nil
 }

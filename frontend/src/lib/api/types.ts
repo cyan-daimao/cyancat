@@ -78,7 +78,7 @@ export interface QueryResultDTO {
   connID: number;
   sql: string;
   columns: ColumnDTO[];
-  rows: any[][];
+  rows: (string | null)[][];
   rowsAffected: number;
   lastInsertID: number;
   durationMs: number;

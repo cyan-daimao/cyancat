@@ -3,6 +3,8 @@ package postgres
 import (
 	"fmt"
 
+	"cyancat/internal/infra/driver"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -58,8 +60,9 @@ func scanAllPG(rows pgxRowsLike, colCount int) ([][]any, error) {
 		}
 		for i, v := range values {
 			if b, ok := v.([]byte); ok {
-				values[i] = string(b)
+				v = string(b)
 			}
+			values[i] = driver.NormalizeValue(v)
 		}
 		result = append(result, values)
 	}

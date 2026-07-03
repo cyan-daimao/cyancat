@@ -21,17 +21,29 @@ interface ResultPanelProps {
 }
 
 /** 将任意值格式化为字符串（NULL/undefined 统一显示为 "NULL"） */
-const formatValue = (v: any): string => {
+const formatValue = (v: string | null | undefined): string => {
   if (v === null || v === undefined) return 'NULL';
-  return String(v);
+  return v;
 };
 
-/** 把值序列化成 SQL 字面量（NULL/数字/布尔保持裸值，其余加单引号并转义） */
-const toSqlLiteral = (v: any): string => {
+/** 判断数据库类型是否为数值类型 */
+const isNumericType = (databaseType: string): boolean => {
+  const t = databaseType.toLowerCase();
+  return /\b(int|integer|bigint|smallint|tinyint|mediumint|decimal|numeric|float|double|real|money|serial|bigserial|smallserial)\b/.test(t);
+};
+
+/** 判断数据库类型是否为布尔类型 */
+const isBooleanType = (databaseType: string): boolean => {
+  const t = databaseType.toLowerCase();
+  return t === 'bool' || t === 'boolean';
+};
+
+/** 把值序列化成 SQL 字面量（NULL 保持 NULL，数值/布尔按列类型输出裸值，其余加单引号并转义） */
+const toSqlLiteral = (v: string | null | undefined, databaseType: string): string => {
   if (v === null || v === undefined) return 'NULL';
-  if (typeof v === 'number' || typeof v === 'bigint') return String(v);
-  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
-  const s = String(v).replace(/'/g, "''");
+  if (isBooleanType(databaseType)) return v.toLowerCase() === 'true' ? 'TRUE' : 'FALSE';
+  if (isNumericType(databaseType)) return v;
+  const s = v.replace(/'/g, "''");
   return `'${s}'`;
 };
 
@@ -133,7 +145,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
   const exportCSV = () => {
     if (!rows.length) return;
     const header = cols.map(c => c.name).join(',');
-    const body = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const body = rows.map(r => r.map(v => `"${(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const csv = header + '\n' + body;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -147,7 +159,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     if (!rows.length) return;
     const header = '| ' + cols.map(c => c.name).join(' | ') + ' |';
     const sep = '| ' + cols.map(() => '---').join(' | ') + ' |';
-    const body = rows.map(r => '| ' + r.map(v => String(v ?? 'NULL')).join(' | ') + ' |').join('\n');
+    const body = rows.map(r => '| ' + r.map(v => v ?? 'NULL').join(' | ') + ' |').join('\n');
     navigator.clipboard.writeText(header + '\n' + sep + '\n' + body);
     toast({ title: '已复制为 Markdown 表格' });
   };
@@ -177,7 +189,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     const row = pagedRows[rowIdx];
     if (!row) return;
     const colList = cols.map(c => `\`${c.name}\``).join(', ');
-    const valList = row.map(toSqlLiteral).join(', ');
+    const valList = row.map((v, i) => toSqlLiteral(v, cols[i].databaseType)).join(', ');
     const sql = `INSERT INTO \`${resolvedTableName}\` (${colList}) VALUES (${valList});`;
     copyText(sql);
   };
@@ -190,18 +202,12 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
 
   /**
    * 渲染单元格内容。
-   * 关键点：
-   *  - 完整字符串始终保留在 DOM 中（不截断 textContent），
-   *    这样双击选中 / 拖拽选区 / 复制 都能拿到原值；
-   *  - 通过 CSS `truncate`（overflow:hidden + text-overflow:ellipsis + nowrap）
-   *    让超长文本视觉上省略，不会撑列遮挡其他字段；
-   *  - 配合 <table style={{ tableLayout: 'fixed' }}>，列宽不会被超长内容撑爆。
    */
-  const renderCell = (value: any) => {
+  const renderCell = (value: string | null | undefined) => {
     if (value === null || value === undefined) {
       return <span className="text-muted-foreground italic">NULL</span>;
     }
-    const str = String(value);
+    const str = value;
 
     // JSON 值仍以等宽字体显示，但同样不截断 textContent
     let isJson = false;
@@ -407,7 +413,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
           <span>共 {rows.length} 行</span>
           <span>·</span>
           <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setCurrentPage(1); }}>
-            <SelectTrigger className="h-6 w-[70px] text-xs">
+            <SelectTrigger className="h-6 w-[95px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

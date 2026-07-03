@@ -44,8 +44,8 @@ func TestSQLiteDriverMetadataAndDDL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query sqlite: %v", err)
 	}
-	if got := result.Rows[0][0]; got != int64(9223372036854775807) {
-		t.Fatalf("expected bigint value to round-trip as int64, got %#v", got)
+	if got := result.Rows[0][0]; got != "9223372036854775807" {
+		t.Fatalf("expected unsafe bigint value to be serialized as string, got %#v", got)
 	}
 
 	dbs, err := conn.Inspector().ListDatabases(ctx)
