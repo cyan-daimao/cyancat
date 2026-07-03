@@ -12,6 +12,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { exportApi } from '@/lib/api/export';
 import { useSchemaStore } from '@/stores/schema';
 
 interface ResultPanelProps {
@@ -142,17 +143,21 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     overscan: 20,
   });
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
     if (!rows.length) return;
     const header = cols.map(c => c.name).join(',');
     const body = rows.map(r => r.map(v => `"${(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const csv = header + '\n' + body;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'query_result.csv'; a.click();
-    URL.revokeObjectURL(url);
-    toast({ title: 'CSV 已导出' });
+    try {
+      const res = await exportApi.exportCSV({ filename: 'query_result.csv', content: csv });
+      if (res.saved) {
+        toast({ title: 'CSV 已导出', description: res.path });
+      } else {
+        toast({ title: '已取消' });
+      }
+    } catch (e: any) {
+      toast({ title: '导出失败', description: e?.message, variant: 'destructive' });
+    }
   };
 
   // ----- 右键菜单：复制操作 -----

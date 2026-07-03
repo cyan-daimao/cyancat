@@ -128,6 +128,17 @@ export interface QueryHistoryDTO {
   executedAt: string;
 }
 
+// Export DTOs
+export interface ExportCSVRequest {
+  filename: string;
+  content: string;
+}
+
+export interface ExportCSVResult {
+  saved: boolean;
+  path: string;
+}
+
 // Schema DTOs
 export interface DatabaseDTO {
   name: string;
