@@ -155,15 +155,6 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     toast({ title: 'CSV 已导出' });
   };
 
-  const copyAsMarkdown = () => {
-    if (!rows.length) return;
-    const header = '| ' + cols.map(c => c.name).join(' | ') + ' |';
-    const sep = '| ' + cols.map(() => '---').join(' | ') + ' |';
-    const body = rows.map(r => '| ' + r.map(v => v ?? 'NULL').join(' | ') + ' |').join('\n');
-    navigator.clipboard.writeText(header + '\n' + sep + '\n' + body);
-    toast({ title: '已复制为 Markdown 表格' });
-  };
-
   // ----- 右键菜单：复制操作 -----
   const copyText = async (text: string) => {
     try {
@@ -275,9 +266,6 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
         <div className="flex-1" />
         <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={exportCSV}>
           <Download className="h-3 w-3 mr-1" />CSV
-        </Button>
-        <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={copyAsMarkdown}>
-          <Copy className="h-3 w-3 mr-1" />Markdown
         </Button>
       </div>
 
