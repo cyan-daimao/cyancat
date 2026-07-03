@@ -13,10 +13,11 @@
 - 🌳 **对象树浏览器** — 数据库 → 表 → 字段 / 索引 / 外键，逐层懒加载
 - 🎨 **可视化设计器** — 表设计器 + 字段网格，所有结构变更先预览 DDL 再执行
 - 📝 **SQL 编辑器** — 基于 Monaco Editor，支持执行 / 格式化 / 注释切换
-- 📊 **结果网格** — 虚拟滚动、列宽拖拽、分页、复制为 TSV / INSERT SQL / CSV / Markdown
+- 📊 **结果网格** — 虚拟滚动、列宽拖拽、分页、复制为 TSV / INSERT SQL / CSV
 - ⚠️ **安全确认** — 高风险 DDL（DROP TABLE / DROP DATABASE）强制二次确认
 - 🔒 **凭据加密** — AES-GCM 加密存储密码，支持 OS Keychain 扩展
 - 🖥️ **跨平台** — macOS / Windows / Linux
+- 🧮 **大整数精度保持** — 查询结果统一以字符串返回，避免前端 JS Number 精度丢失
 
 ## 📸 截图
 
@@ -58,7 +59,7 @@ wails build -platform windows/amd64       # Windows
 wails build -platform linux/amd64         # Linux
 ```
 
-产物输出到 `build/bin/`。
+产物输出到 `build/bin/`。源码仓库不再提交 `frontend/dist` 与 `build/dist`，构建产物由 `wails build` 本地生成。
 
 ### 常用命令
 
@@ -75,6 +76,8 @@ go test ./...
 wails generate module
 ```
 
+> 注意：`wails generate module` 与 `wails build` 会生成 `frontend/wailsjs/`、`frontend/dist/` 和 `build/dist/` 等目录，这些已被 `.gitignore` 忽略，请勿手动提交。
+
 ## ⚙️ 运行时配置
 
 | 配置项 | 说明 |
@@ -86,6 +89,10 @@ wails generate module
 > 开发模式未设置密钥时使用硬编码默认值，会在日志中输出警告。
 
 ## 🏗️ 技术架构
+
+### 数据精度说明
+
+查询结果从后端返回前端时，所有单元格统一格式化为字符串（`string | null`）。这可以避免 JavaScript `Number` 类型仅支持 53 位整数精度导致的大整数截断问题，例如 `int64` / `bigint` 在结果网格中显示为 `xxx000`。列定义仍保留原始 `databaseType`，前端据此做数值/布尔/字符串格式化与 SQL 字面量生成。
 
 ### 技术栈
 
