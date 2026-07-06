@@ -210,6 +210,17 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
           });
           return;
         }
+        if (connectionType === 'redis') {
+          const key = node.tableName!;
+          const sql = `TYPE ${key}`;
+          openQueryTab({ title: key, sql, context: queryContext() });
+          await execute({
+            connID: node.connID,
+            sql,
+            maxRows: 100,
+          });
+          return;
+        }
         const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 500;`;
         openQueryTab({ title: node.tableName, sql, context: queryContext() });
         await execute({

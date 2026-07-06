@@ -73,6 +73,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
   };
 
   const isKafka = (connID: number) => getConnectionType(connID) === 'kafka';
+  const isRedis = (connID: number) => getConnectionType(connID) === 'redis';
 
   // 点击连接根节点：未打开则 open + 展开 + 拉数据库列表；已打开则切换展开/收起
   const handleConnectionClick = async (node: TreeNode) => {
@@ -150,8 +151,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
 
     if (node.type === 'database' && !node.loaded) {
       setLoading(node.key, true);
-      if (isKafka(node.connID)) {
-        // topic 节点标记为已加载即可，无需真的加载 partition 子节点
+      if (isKafka(node.connID) || isRedis(node.connID)) {
+        // Kafka topic / Redis db 节点标记为已加载即可，不加载子节点
         const targetKey = node.key;
         const targetConnID = node.connID;
         useSchemaStore.setState((state: { trees: Record<number, TreeNode[]> }) => {
@@ -192,6 +193,9 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
       await handleConnectionClick(node);
     } else if (node.type === 'database' && isKafka(node.connID)) {
       await handleKafkaTopicDoubleClick(node);
+    } else if (node.type === 'database' && isRedis(node.connID)) {
+      // Redis 的 db 节点展开后展示 keys
+      await handleToggle(node);
     } else if (hasChildren) {
       await handleToggle(node);
     }

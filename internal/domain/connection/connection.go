@@ -167,16 +167,18 @@ func (c *Connection) normalize() {
 			c.Port = 9030
 		case driver.Kafka:
 			c.Port = 9092
+		case driver.Redis:
+			c.Port = 6379
 		}
 	}
 
-	// Kafka 默认主机允许逗号分隔的 broker 列表
-	if c.Type == driver.Kafka && c.Host == "" {
+	// Kafka / Redis 默认主机
+	if (c.Type == driver.Kafka || c.Type == driver.Redis) && c.Host == "" {
 		c.Host = "127.0.0.1"
 	}
 
 	// 默认主机
-	if c.Host == "" && c.Type != driver.SQLite && c.Type != driver.Kafka {
+	if c.Host == "" && c.Type != driver.SQLite && c.Type != driver.Kafka && c.Type != driver.Redis {
 		c.Host = "127.0.0.1"
 	}
 }
@@ -198,7 +200,7 @@ func (c *Connection) validate() error {
 		if c.Port <= 0 || c.Port > 65535 {
 			return fmt.Errorf("connection: port must be between 1 and 65535, got %d", c.Port)
 		}
-		if c.Type != driver.Kafka && c.User == "" {
+		if c.Type != driver.Kafka && c.Type != driver.Redis && c.User == "" {
 			return errors.New("connection: user is required")
 		}
 	}

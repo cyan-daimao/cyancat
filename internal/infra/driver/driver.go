@@ -23,12 +23,14 @@ const (
 	StarRocks DriverType = "starrocks"
 	// Kafka Kafka 驱动
 	Kafka DriverType = "kafka"
+	// Redis Redis 驱动
+	Redis DriverType = "redis"
 )
 
 // IsValid 校验驱动类型是否合法
 func (t DriverType) IsValid() bool {
 	switch t {
-	case MySQL, PostgreSQL, SQLite, StarRocks, Kafka:
+	case MySQL, PostgreSQL, SQLite, StarRocks, Kafka, Redis:
 		return true
 	default:
 		return false

@@ -15,6 +15,7 @@ import (
 	"cyancat/internal/infra/db/connectionrepo"
 	"cyancat/internal/infra/db/historyrepo"
 	"cyancat/internal/infra/driver"
+	redisdriver "cyancat/internal/infra/driver/redis"
 	kafkadriver "cyancat/internal/infra/driver/kafka"
 	mysqldriver "cyancat/internal/infra/driver/mysql"
 	postgresdriver "cyancat/internal/infra/driver/postgres"
@@ -43,6 +44,7 @@ func main() {
 	driver.Register(sqlitedriver.New())
 	driver.Register(starrocksdriver.New())
 	driver.Register(kafkadriver.New())
+	driver.Register(redisdriver.New())
 
 	// 3. 初始化本地 SQLite
 	dbPath := dbPath()
