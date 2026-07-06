@@ -136,6 +136,13 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
     { label: '复制限定视图名', action: 'copy-full-name', icon: 'Copy' },
   ],
 
+  // ---- Kafka topic 节点 ----
+  'kafka-topic': [
+    { label: '查看消息', action: 'view-kafka-messages', icon: 'Eye' },
+    SEP,
+    { label: '复制 topic 名', action: 'copy-name', icon: 'Copy' },
+  ],
+
   // ---- 文件夹节点 ----
   'columns-folder': [
     { label: '新增字段', action: 'add-column', icon: 'Plus' },

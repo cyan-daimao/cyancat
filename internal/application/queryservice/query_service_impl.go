@@ -116,6 +116,48 @@ func (s *QueryServiceImpl) Execute(cmd *ExecuteCmd) (*QueryResultBO, error) {
 			LastInsertID: res.LastInsertID,
 			Duration:     time.Since(start),
 		}
+	} else if driverType == driver.Kafka {
+		// Kafka 使用 Stream 接口消费消息
+		stream, err := execConn.Stream(ctx, sqlText)
+		if err != nil {
+			s.recordError(cmd.ConnID, sqlText, err)
+			if s.historyRepo != nil {
+				_ = s.historyRepo.Save(&QueryHistoryBO{
+					ConnID:       cmd.ConnID,
+					SQL:          sqlText,
+					Status:       "error",
+					ErrorMessage: err.Error(),
+					DurationMs:   time.Since(start).Milliseconds(),
+					ExecutedAt:   time.Now(),
+				})
+			}
+			return nil, err
+		}
+		defer stream.Close()
+
+		columns := ToColumnBOs(stream.Columns())
+		var rows [][]any
+		for stream.Next() {
+			row, err := stream.Scan()
+			if err != nil {
+				s.recordError(cmd.ConnID, sqlText, err)
+				return nil, err
+			}
+			rows = append(rows, row)
+		}
+		if err := stream.Err(); err != nil {
+			s.recordError(cmd.ConnID, sqlText, err)
+			return nil, err
+		}
+
+		result = &QueryResultBO{
+			ConnID:    cmd.ConnID,
+			SQL:       sqlText,
+			Columns:   columns,
+			Rows:      rows,
+			Duration:  time.Since(start),
+			Truncated: false,
+		}
 	} else {
 		// 包含查询语句：逐条执行，仅最后一条返回结果，且自动追加 LIMIT 兜底
 		for idx, stmt := range stmts {
@@ -228,6 +270,9 @@ func (s *QueryServiceImpl) prepareExecutionConn(ctx context.Context, cmd *Execut
 	}
 
 	switch driverType {
+	case driver.Kafka:
+		// Kafka 不需要切换 database/schema
+		return conn, func() {}, nil
 	case driver.MySQL:
 		if database == "" {
 			database = schema

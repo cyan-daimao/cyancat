@@ -62,18 +62,19 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
     setForm(f => ({
       ...f,
       type,
-      host: type === 'sqlite' ? '' : (f.host || '127.0.0.1'),
-      port: type === 'mysql' ? 3306 : type === 'postgres' ? 5432 : type === 'starrocks' ? 9030 : 0,
-      user: type === 'sqlite' ? '' : (f.user || 'root'),
-      password: type === 'sqlite' ? '' : f.password,
-      database: type === 'sqlite' ? '' : f.database,
+      host: type === 'sqlite' ? '' : type === 'kafka' ? (f.host || '127.0.0.1:9092') : (f.host || '127.0.0.1'),
+      port: type === 'mysql' ? 3306 : type === 'postgres' ? 5432 : type === 'starrocks' ? 9030 : type === 'kafka' ? 9092 : 0,
+      user: type === 'sqlite' || type === 'kafka' ? '' : (f.user || 'root'),
+      password: type === 'sqlite' || type === 'kafka' ? '' : f.password,
+      database: type === 'sqlite' || type === 'kafka' ? '' : f.database,
       ssl: type === 'sqlite' ? false : f.ssl,
     }));
   };
 
   const databasePlaceholder = form.type === 'postgres' ? '留空默认 postgres' : '可选';
   const isSQLite = form.type === 'sqlite';
-  const namePlaceholder = isSQLite ? '本地 SQLite' : '本地 MySQL';
+  const isKafka = form.type === 'kafka';
+  const namePlaceholder = isSQLite ? '本地 SQLite' : isKafka ? '本地 Kafka' : '本地 MySQL';
 
   const validateForm = (forTest = false): boolean => {
     if (!form.name.trim() && !forTest) {
@@ -82,12 +83,12 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
     }
     if (!form.host.trim()) {
       toast({
-        title: isSQLite ? '请选择 SQLite 数据库文件' : '请输入主机地址',
+        title: isSQLite ? '请选择 SQLite 数据库文件' : isKafka ? '请输入 Kafka Brokers' : '请输入主机地址',
         variant: 'destructive',
       });
       return false;
     }
-    if (!isSQLite && !form.user.trim()) {
+    if (!isSQLite && !isKafka && !form.user.trim()) {
       toast({ title: '请输入用户名', variant: 'destructive' });
       return false;
     }
@@ -160,6 +161,7 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
                   <SelectItem value="mysql">MySQL</SelectItem>
                   <SelectItem value="postgres">PostgreSQL</SelectItem>
                   <SelectItem value="starrocks">StarRocks</SelectItem>
+                  <SelectItem value="kafka">Kafka</SelectItem>
                   <SelectItem value="sqlite">SQLite</SelectItem>
                 </SelectContent>
               </Select>
@@ -185,6 +187,27 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
                   </Button>
                 </div>
               </div>
+            ) : isKafka ? (
+              <>
+                <div className="grid grid-cols-4 items-center gap-2">
+                  <Label className="text-right">Brokers</Label>
+                  <Input
+                    className="col-span-3"
+                    value={form.host}
+                    onChange={e => setForm(f => ({ ...f, host: e.target.value }))}
+                    placeholder="127.0.0.1:9092 或 a:9092,b:9093"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-2">
+                  <Label className="text-right">端口</Label>
+                  <Input
+                    type="number"
+                    className="col-span-3"
+                    value={form.port}
+                    onChange={e => setForm(f => ({ ...f, port: parseInt(e.target.value) || 0 }))}
+                  />
+                </div>
+              </>
             ) : (
               <>
                 <div className="grid grid-cols-4 items-center gap-2">
@@ -221,7 +244,7 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
                 </SelectContent>
               </Select>
             </div>
-            {!isSQLite && (
+            {!isSQLite && !isKafka && (
               <div className="grid grid-cols-4 items-center gap-2">
                 <Label className="text-right">SSL</Label>
                 <div className="col-span-3 flex items-center gap-2">

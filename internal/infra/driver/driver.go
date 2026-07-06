@@ -21,12 +21,14 @@ const (
 	SQLite DriverType = "sqlite"
 	// StarRocks StarRocks 驱动（MySQL 协议兼容）
 	StarRocks DriverType = "starrocks"
+	// Kafka Kafka 驱动
+	Kafka DriverType = "kafka"
 )
 
 // IsValid 校验驱动类型是否合法
 func (t DriverType) IsValid() bool {
 	switch t {
-	case MySQL, PostgreSQL, SQLite, StarRocks:
+	case MySQL, PostgreSQL, SQLite, StarRocks, Kafka:
 		return true
 	default:
 		return false

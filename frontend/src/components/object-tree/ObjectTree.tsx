@@ -70,6 +70,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     return t === 'postgres' || t === 'starrocks';
   };
 
+  const isKafka = (connID: number) => getConnectionType(connID) === 'kafka';
+
   // 点击连接根节点：未打开则 open + 展开 + 拉数据库列表；已打开则切换展开/收起
   const handleConnectionClick = async (node: TreeNode) => {
     const id = node.connID;
@@ -124,7 +126,10 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
 
     if (node.type === 'database' && !node.loaded) {
       setLoading(node.key, true);
-      if (needsSchemaLayer(node.connID)) {
+      if (isKafka(node.connID)) {
+        // Kafka 的 database 节点对应 topic，加载其分区/消息入口
+        await loadTables(node.connID, node.database!, node.database!);
+      } else if (needsSchemaLayer(node.connID)) {
         await loadSchemas(node.connID, node.database!);
       } else {
         await loadTables(node.connID, node.database!, node.schema || node.database!);

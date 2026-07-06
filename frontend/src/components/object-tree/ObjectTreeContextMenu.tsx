@@ -126,6 +126,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
       table: node.tableName!,
     });
   };
+  const qualifiedKafkaTopic = (): string => node.database || node.tableName || node.label;
 
   /** 统一 action 派发 */
   const dispatchAction = async (action: string) => {
@@ -336,6 +337,19 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         return;
       }
 
+      // ---- Kafka ----
+      case 'view-kafka-messages': {
+        const topic = qualifiedKafkaTopic();
+        const sql = `CONSUME ${topic} LIMIT 100`;
+        openQueryTab({ title: topic, sql, context: queryContext() });
+        await execute({
+          connID: node.connID,
+          sql,
+          maxRows: 100,
+        });
+        return;
+      }
+
       // ---- 通用 ----
       case 'new-query': {
         addEmptyResult(queryContext());
@@ -346,7 +360,9 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         if (node.type === 'connection') {
           await loadDatabases(node.connID);
         } else if (node.type === 'database') {
-          if (getConnectionType() === 'postgres' || getConnectionType() === 'starrocks') {
+          if (getConnectionType() === 'kafka') {
+            await loadTables(node.connID, node.database!, node.database!);
+          } else if (getConnectionType() === 'postgres' || getConnectionType() === 'starrocks') {
             await loadSchemas(node.connID, node.database!);
           } else {
             await loadTables(node.connID, node.database!, node.schema || node.database!);
