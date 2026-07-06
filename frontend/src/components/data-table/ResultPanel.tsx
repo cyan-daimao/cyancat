@@ -65,11 +65,12 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
   const getColWidth = (name: string) => colWidths[name] ?? DEFAULT_COL_WIDTH;
 
-  // 当列集合变化时（例如切换查询结果），重置宽度
+  // 当列集合变化时（例如切换查询结果），重置宽度和分页
   const colsKey = React.useMemo(() => cols.map(c => c.name).join('|'), [cols]);
   React.useEffect(() => {
     setColWidths({});
-  }, [colsKey]);
+    setCurrentPage(1);
+  }, [colsKey, rows.length]);
 
   // 拖拽列宽
   const dragState = React.useRef<{ name: string; startX: number; startWidth: number } | null>(null);
@@ -140,7 +141,8 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
     count: pagedRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 28,
-    overscan: 20,
+    overscan: 100,
+    measureElement: (el) => el.getBoundingClientRect().height,
   });
 
   const exportCSV = async () => {
