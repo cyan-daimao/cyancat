@@ -222,7 +222,7 @@ const SqlWorkspace: React.FC = () => {
                           <span>查询 {i + 1}</span>
                           <span className="text-muted-foreground">({r.rows?.length || 0} 行)</span>
                           <button
-                            className="ml-1 p-0.5 rounded hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="ml-1 p-0.5 rounded hover:bg-accent/50 opacity-0 group-hover:opacity-100 transition-opacity text-foreground"
                             onClick={(e) => { e.stopPropagation(); closeResult(i); }}
                             title="关闭"
                           >
