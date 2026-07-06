@@ -23,28 +23,72 @@ func newInspector(c driver.Conn) driver.Inspector {
 	return &inspector{db: db(c)}
 }
 
-// ListDatabases 列出所有 catalog
+// ListDatabases 列出所有 catalog。
+// 优先 SHOW CATALOGS；在 SR 3.5.x 某些环境该语句会报 Unknown table 'INFORMATION_SCHEMA.CATALOGS'，
+// 此时回退到 information_schema.tables 去重 TABLE_CATALOG；再失败则兜底返回 default_catalog。
 func (i *inspector) ListDatabases(ctx context.Context) ([]driver.Database, error) {
 	if i.db == nil {
 		return nil, fmt.Errorf("starrocks/inspector: underlying db not available")
 	}
 
-	const q = `SHOW CATALOGS`
-	rows, err := i.db.QueryContext(ctx, q)
+	catalogs, err := i.listCatalogsShow(ctx)
+	if err == nil && len(catalogs) > 0 {
+		return catalogs, nil
+	}
+
+	catalogs, err = i.listCatalogsFromInfoSchema(ctx)
+	if err == nil && len(catalogs) > 0 {
+		return catalogs, nil
+	}
+
+	// 兜底：至少保证 default_catalog 可用，让用户能继续浏览内置数据
+	return []driver.Database{{Name: "default_catalog"}}, nil
+}
+
+func (i *inspector) listCatalogsShow(ctx context.Context) ([]driver.Database, error) {
+	rows, err := i.db.QueryContext(ctx, `SHOW CATALOGS`)
 	if err != nil {
-		return nil, fmt.Errorf("starrocks/inspector: list catalogs: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
 	var result []driver.Database
 	for rows.Next() {
-		var d driver.Database
-		var catalogName, catalogType, comment sql.NullString
-		if err := rows.Scan(&catalogName, &catalogType, &comment); err != nil {
+		name, err := scanFirstString(rows)
+		if err != nil {
 			return nil, err
 		}
-		d.Name = catalogName.String
-		result = append(result, d)
+		if name == "" {
+			continue
+		}
+		result = append(result, driver.Database{Name: name})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (i *inspector) listCatalogsFromInfoSchema(ctx context.Context) ([]driver.Database, error) {
+	const q = `SELECT DISTINCT TABLE_CATALOG FROM information_schema.tables
+		WHERE TABLE_CATALOG IS NOT NULL AND TABLE_CATALOG != ''
+		ORDER BY TABLE_CATALOG`
+	rows, err := i.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []driver.Database
+	for rows.Next() {
+		name, err := scanFirstString(rows)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			continue
+		}
+		result = append(result, driver.Database{Name: name})
 	}
 	return result, rows.Err()
 }
@@ -68,8 +112,8 @@ func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.
 
 	var result []driver.Schema
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		name, err := scanFirstString(rows)
+		if err != nil {
 			return nil, err
 		}
 		result = append(result, driver.Schema{Name: name})
@@ -96,8 +140,8 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 
 	var result []driver.Table
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		name, err := scanFirstString(rows)
+		if err != nil {
 			return nil, err
 		}
 		result = append(result, driver.Table{Name: name, Type: "BASE TABLE"})
@@ -326,4 +370,27 @@ func quoteIdent(ident string) string {
 	}
 	out = append(out, '`')
 	return string(out)
+}
+
+// scanFirstString 读取结果集第一行第一列的字符串，忽略其余列。
+// StarRocks 的 SHOW DATABASES / SHOW TABLES / SHOW CATALOGS 在不同版本返回的列数不一致，
+// 使用该 helper 避免 "expected N destination arguments in Scan" 错误。
+func scanFirstString(rows *sql.Rows) (string, error) {
+	cols, err := rows.Columns()
+	if err != nil {
+		return "", err
+	}
+	if len(cols) == 0 {
+		return "", fmt.Errorf("no columns")
+	}
+	dest := make([]any, len(cols))
+	for i := range cols {
+		var s sql.NullString
+		dest[i] = &s
+	}
+	if err := rows.Scan(dest...); err != nil {
+		return "", err
+	}
+	first := dest[0].(*sql.NullString)
+	return first.String, nil
 }

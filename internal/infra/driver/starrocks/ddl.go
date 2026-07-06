@@ -87,14 +87,37 @@ func (g *ddlGenerator) GetCreateTableDDL(ctx context.Context, database, schema, 
 	}
 	catalog, dbName := pickCatalogDatabase(database, schema)
 
-	q := "SHOW CREATE TABLE " + threePartName(catalog, dbName, table)
-	row := g.db.QueryRowContext(ctx, q)
+	// StarRocks 3.5.x 对外部 catalog 的 SHOW CREATE TABLE 有时无法直接识别三层限定名，
+	// 需要在同一条连接上先 SET CATALOG / USE，再用两层限定名查询。
+	// 因此这里从连接池申请一条专用连接，避免污染连接池全局状态。
+	conn, err := g.db.Conn(ctx)
+	if err != nil {
+		return "", fmt.Errorf("starrocks/ddl: acquire conn: %w", err)
+	}
+	defer conn.Close()
+
+	if catalog != "" {
+		if _, err := conn.ExecContext(ctx, "SET CATALOG "+quoteIdent(catalog)); err != nil {
+			return "", fmt.Errorf("starrocks/ddl: set catalog %q: %w", catalog, err)
+		}
+	}
+	if dbName != "" {
+		if _, err := conn.ExecContext(ctx, "USE "+quoteIdent(dbName)); err != nil {
+			return "", fmt.Errorf("starrocks/ddl: use database %q: %w", dbName, err)
+		}
+	}
+
+	q := "SHOW CREATE TABLE " + quoteIdent(table)
+	row := conn.QueryRowContext(ctx, q)
 	var tname, ddl string
 	if err := row.Scan(&tname, &ddl); err != nil {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("starrocks/ddl: table not found")
 		}
 		return "", fmt.Errorf("starrocks/ddl: show create table: %w", err)
+	}
+	if strings.TrimSpace(ddl) == "" {
+		return "", fmt.Errorf("starrocks/ddl: empty ddl returned")
 	}
 	return ddl, nil
 }
