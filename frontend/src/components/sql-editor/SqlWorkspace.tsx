@@ -129,7 +129,7 @@ const SqlWorkspace: React.FC = () => {
                   <span className="text-muted-foreground">({tab.results.length})</span>
                 )}
                 <button
-                  className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/80 hover:bg-accent hover:text-foreground"
+                  className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded text-foreground/70 hover:bg-accent hover:text-foreground"
                   onClick={(e) => { e.stopPropagation(); closeQueryTab(tab.id); }}
                   title="关闭标签页"
                 >
