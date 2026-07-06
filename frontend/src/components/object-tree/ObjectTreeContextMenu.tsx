@@ -212,7 +212,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         }
         if (connectionType === 'redis') {
           const key = node.tableName!;
-          const sql = `TYPE ${key}`;
+          const sql = `PREVIEW ${key}`;
           openQueryTab({ title: key, sql, context: queryContext() });
           await execute({
             connID: node.connID,

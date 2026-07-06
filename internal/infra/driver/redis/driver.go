@@ -141,6 +141,7 @@ func (c *Conn) ServerVersion(ctx context.Context) (string, error) {
 // Execute 执行类 SQL 元数据查询：
 //   - INFO [section]                返回服务器信息（单列多行文本）
 //   - DB_SIZE / DBSIZE              返回当前库 key 数量
+//   - PREVIEW key                   根据 key 类型自动返回其值
 //   - TYPE key                      返回 key 类型
 //   - TTL key                       返回 key 剩余秒数
 //   - GET key / HGET key field      返回单个值
@@ -165,6 +166,11 @@ func (c *Conn) Execute(ctx context.Context, sqlText string, args ...any) (*drive
 		return c.executeInfo(ctx, section)
 	case "DBSIZE", "DB_SIZE":
 		return c.executeDBSize(ctx)
+	case "PREVIEW":
+		if len(tokens) < 2 {
+			return nil, fmt.Errorf("redis: PREVIEW requires key")
+		}
+		return c.executePreview(ctx, tokens[1])
 	case "TYPE":
 		if len(tokens) < 2 {
 			return nil, fmt.Errorf("redis: TYPE requires key")
@@ -218,6 +224,32 @@ func (c *Conn) Execute(ctx context.Context, sqlText string, args ...any) (*drive
 	}
 
 	return nil, fmt.Errorf("redis: unsupported command %q", sqlText)
+}
+
+func (c *Conn) executePreview(ctx context.Context, key string) (*driver.Result, error) {
+	typeVal, err := c.client.Type(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	switch typeVal {
+	case "string":
+		return c.executeGet(ctx, key)
+	case "hash":
+		return c.executeHGetAll(ctx, key)
+	case "list":
+		return c.executeLRange(ctx, key, 0, -1)
+	case "set":
+		return c.executeSMembers(ctx, key)
+	case "zset":
+		return c.executeZRangeWithScores(ctx, key, 0, -1)
+	case "stream":
+		return c.executeXRange(ctx, key, "-", "+")
+	default:
+		return &driver.Result{
+			Columns: []driver.Column{{Name: "type"}, {Name: "value"}},
+			Rows:    driver.NormalizeRows([][]any{{typeVal, "(preview not supported)"}}),
+		}, nil
+	}
 }
 
 // Stream 流式执行 SCAN 类查询：
@@ -399,6 +431,38 @@ func (c *Conn) executeZRange(ctx context.Context, key string, start, stop int64)
 	}
 	return &driver.Result{
 		Columns: []driver.Column{{Name: "rank"}, {Name: "member"}},
+		Rows:    driver.NormalizeRows(rows),
+	}, nil
+}
+
+func (c *Conn) executeZRangeWithScores(ctx context.Context, key string, start, stop int64) (*driver.Result, error) {
+	pairs, err := c.client.ZRangeWithScores(ctx, key, start, stop).Result()
+	if err != nil {
+		return nil, err
+	}
+	rows := make([][]any, 0, len(pairs))
+	for i, p := range pairs {
+		rows = append(rows, []any{start + int64(i), p.Member, p.Score})
+	}
+	return &driver.Result{
+		Columns: []driver.Column{{Name: "rank"}, {Name: "member"}, {Name: "score"}},
+		Rows:    driver.NormalizeRows(rows),
+	}, nil
+}
+
+func (c *Conn) executeXRange(ctx context.Context, key, start, stop string) (*driver.Result, error) {
+	msgs, err := c.client.XRange(ctx, key, start, stop).Result()
+	if err != nil {
+		return nil, err
+	}
+	rows := make([][]any, 0, len(msgs))
+	for _, m := range msgs {
+		for k, v := range m.Values {
+			rows = append(rows, []any{m.ID, k, v})
+		}
+	}
+	return &driver.Result{
+		Columns: []driver.Column{{Name: "id"}, {Name: "field"}, {Name: "value"}},
 		Rows:    driver.NormalizeRows(rows),
 	}, nil
 }
