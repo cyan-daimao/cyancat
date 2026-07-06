@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useConnectionStore } from '@/stores/connection';
 import { useSchemaStore } from '@/stores/schema';
+import { useQueryStore } from '@/stores/query';
 import {
   ChevronRight, ChevronDown, ChevronLeft, Database, Server, Table, Eye, Columns,
   FolderOpen, Key, Link2, Loader2, FileType, Plus, Search, X,
@@ -47,6 +48,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     toggleExpand,
     resetTree,
   } = useSchemaStore();
+  const { openQueryTab, execute } = useQueryStore();
   const [loadingKeys, setLoadingKeys] = React.useState<Set<string>>(new Set());
 
   // 搜索关键字（前端过滤数据库 + 表/视图名称）
@@ -117,8 +119,29 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     await handleToggle(node);
   };
 
-  // 简单策略：Kafka 的 database 节点就是 topic，不展示 partition 子节点，
-  // 也不触发 loadTableDetail（没有列结构意义）。
+  const queryContext = (node: TreeNode) => {
+    const conn = connections.find(c => c.id === node.connID);
+    return {
+      connID: node.connID,
+      connectionType: conn?.type,
+      database: node.database,
+      schema: node.schema,
+      contextLabel: [conn?.name || `连接 ${node.connID}`, node.database].filter(Boolean).join(' / '),
+    };
+  };
+
+  // Kafka 的 database 节点就是 topic：双击直接消费消息；单击展开/收起。
+  const handleKafkaTopicDoubleClick = async (node: TreeNode) => {
+    const topic = node.database || node.label;
+    const sql = `CONSUME ${topic} LIMIT 100`;
+    openQueryTab({ title: topic, sql, context: queryContext(node) });
+    await execute({
+      connID: node.connID,
+      sql,
+      maxRows: 100,
+    });
+  };
+
   const handleToggle = async (node: TreeNode) => {
     const expanding = !expandedKeys.has(node.key);
     toggleExpand(node.key);
@@ -167,6 +190,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     setSelectedNode(node);
     if (node.type === 'connection') {
       await handleConnectionClick(node);
+    } else if (node.type === 'database' && isKafka(node.connID)) {
+      await handleKafkaTopicDoubleClick(node);
     } else if (hasChildren) {
       await handleToggle(node);
     }
