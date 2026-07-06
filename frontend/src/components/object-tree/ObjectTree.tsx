@@ -25,12 +25,15 @@ const iconMap: Record<string, React.ReactNode> = {
   foreignKey: <Link2 className="h-4 w-4 text-pink-500" />,
 };
 
+import type { ConnectionDTO } from '@/lib/api/types';
+
 interface ObjectTreeProps {
   onCreateConnection?: () => void;
+  onShowProperties?: (conn: ConnectionDTO) => void;
   onCollapse?: () => void;
 }
 
-const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onCollapse }) => {
+const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowProperties, onCollapse }) => {
   const { connections, openConnIds, openConnection, closeConnection } = useConnectionStore();
   const {
     trees,
@@ -241,7 +244,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onCollapse 
 
     return (
       <div key={node.key}>
-        <ObjectTreeContextMenu node={node}>
+        <ObjectTreeContextMenu node={node} onShowProperties={onShowProperties}>
           {nodeElement}
         </ObjectTreeContextMenu>
         {expanded && node.children?.map((child) => renderNode(child, depth + 1))}

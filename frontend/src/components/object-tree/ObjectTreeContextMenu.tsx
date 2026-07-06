@@ -18,12 +18,14 @@ import { schemaApi } from '@/lib/api/schema';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import type { TreeNode } from '@/stores/schema';
+import type { ConnectionDTO } from '@/lib/api/types';
 import { resolveDialect, quoteIdent as quoteIdentShared, qualifiedTableName as qualifiedTableNameShared } from '@/lib/sql-ident';
 import { getMenuItemsForNode, type MenuItemDef, type MenuContext } from './context-menus';
 
 interface ObjectTreeContextMenuProps {
   node: TreeNode;
   children: React.ReactNode;
+  onShowProperties?: (conn: ConnectionDTO) => void;
 }
 
 /** 渲染图标：从 lucide-react 动态查找 */
@@ -48,7 +50,7 @@ function filterMenuItemsForConnectionType(items: MenuItemDef[], connectionType?:
     );
 }
 
-const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, children }) => {
+const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, children, onShowProperties }) => {
   const { setSelectedNode, loadDatabases, loadSchemas, loadTables, loadTableDetail, resetTree } = useSchemaStore();
   const { openConnIds, openConnection, closeConnection, connections } = useConnectionStore();
   const {
@@ -149,7 +151,12 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         return;
       }
       case 'connection-properties': {
-        toast({ title: '连接属性', description: '即将在后续版本支持' });
+        const conn = connections.find(c => c.id === node.connID);
+        if (conn && onShowProperties) {
+          onShowProperties(conn);
+        } else {
+          toast({ title: '连接属性', description: '未找到连接信息' });
+        }
         return;
       }
 

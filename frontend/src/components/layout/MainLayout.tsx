@@ -3,6 +3,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Database, ChevronRight } from 'lucide-react';
 import { useConnectionStore } from '@/stores/connection';
+import type { ConnectionDTO } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 import ObjectTree from '@/components/object-tree/ObjectTree';
 import SqlWorkspace from '@/components/sql-editor/SqlWorkspace';
@@ -44,6 +45,7 @@ const CollapsedSidebarStrip: React.FC<{ onExpand: () => void }> = ({ onExpand })
 
 const MainLayout: React.FC = () => {
   const [showConnectionDialog, setShowConnectionDialog] = React.useState(false);
+  const [editConnection, setEditConnection] = React.useState<ConnectionDTO | null>(null);
   const fetchConnections = useConnectionStore(s => s.fetchConnections);
 
   const [width, setWidth] = React.useState<number>(DEFAULT_WIDTH);
@@ -152,7 +154,14 @@ const MainLayout: React.FC = () => {
             <CollapsedSidebarStrip onExpand={() => setCollapsed(false)} />
           ) : (
             <ObjectTree
-              onCreateConnection={() => setShowConnectionDialog(true)}
+              onCreateConnection={() => {
+                setEditConnection(null);
+                setShowConnectionDialog(true);
+              }}
+              onShowProperties={(conn) => {
+                setEditConnection(conn);
+                setShowConnectionDialog(true);
+              }}
               onCollapse={() => setCollapsed(true)}
             />
           )}
@@ -185,7 +194,14 @@ const MainLayout: React.FC = () => {
       <DDLViewerDialog />
       <DropTableConfirmDialog />
       <DropDatabaseConfirmDialog />
-      <ConnectionDialog open={showConnectionDialog} onOpenChange={setShowConnectionDialog} />
+      <ConnectionDialog
+        open={showConnectionDialog}
+        onOpenChange={(open) => {
+          setShowConnectionDialog(open);
+          if (!open) setEditConnection(null);
+        }}
+        editConnection={editConnection}
+      />
     </div>
   );
 };
