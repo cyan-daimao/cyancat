@@ -117,7 +117,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     await handleToggle(node);
   };
 
-  // 数据库/表节点：展开 + 懒加载
+  // 简单策略：Kafka 的 database 节点就是 topic，不展示 partition 子节点，
+  // 也不触发 loadTableDetail（没有列结构意义）。
   const handleToggle = async (node: TreeNode) => {
     const expanding = !expandedKeys.has(node.key);
     toggleExpand(node.key);
@@ -127,8 +128,24 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     if (node.type === 'database' && !node.loaded) {
       setLoading(node.key, true);
       if (isKafka(node.connID)) {
-        // Kafka 的 database 节点对应 topic，加载其分区/消息入口
-        await loadTables(node.connID, node.database!, node.database!);
+        // topic 节点标记为已加载即可，无需真的加载 partition 子节点
+        const targetKey = node.key;
+        const targetConnID = node.connID;
+        useSchemaStore.setState((state: { trees: Record<number, TreeNode[]> }) => {
+          const trees = { ...state.trees };
+          const updateLoaded = (items: TreeNode[]): TreeNode[] =>
+            items.map(n => {
+              if (n.key === targetKey) {
+                return { ...n, loaded: true };
+              }
+              if (n.children) {
+                return { ...n, children: updateLoaded(n.children) };
+              }
+              return n;
+            });
+          trees[targetConnID] = updateLoaded(trees[targetConnID] || []);
+          return { trees };
+        });
       } else if (needsSchemaLayer(node.connID)) {
         await loadSchemas(node.connID, node.database!);
       } else {
@@ -205,7 +222,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
 
   const renderNode = (node: TreeNode, depth: number = 0) => {
     const expanded = isExpanded(node.key);
-    const isLeaf = node.type === 'column' || node.type === 'view' || node.type === 'index' || node.type === 'foreignKey';
+    const isLeaf = node.type === 'column' || node.type === 'view' || node.type === 'index' || node.type === 'foreignKey' || node.type === 'kafka-topic';
     const hasChildren = !isLeaf;
     const isConn = node.type === 'connection';
     const isLoading = loadingKeys.has(node.key);
@@ -286,7 +303,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
    * 连接节点也参与匹配（按连接名）。
    */
   const isMatchableType = (t: TreeNode['type']) =>
-    t === 'connection' || t === 'database' || t === 'schema' || t === 'table' || t === 'view';
+    t === 'connection' || t === 'database' || t === 'schema' || t === 'table' || t === 'view' || t === 'kafka-topic';
 
   const nodeMatches = (node: TreeNode): boolean => {
     if (!isMatchableType(node.type)) return false;

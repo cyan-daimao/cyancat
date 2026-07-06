@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/use-toast';
 export interface TreeNode {
   key: string;       // 唯一 key，如 "conn:1:db:mysql:table:users"
   label: string;
-  type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'column' | 'index' | 'foreignKey' | 'columns-folder' | 'indexes-folder' | 'foreign-keys-folder';
+  type: 'connection' | 'database' | 'schema' | 'table' | 'view' | 'column' | 'index' | 'foreignKey' | 'columns-folder' | 'indexes-folder' | 'foreign-keys-folder' | 'kafka-topic';
   icon?: string;
   children?: TreeNode[];
   loaded?: boolean;  // 子节点是否已懒加载
@@ -113,17 +113,20 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
         schemaApi.listViews(connID, database, targetSchema).catch(() => [] as any[]),
       ]);
 
-      const tableNodes: TreeNode[] = tables.map(t => ({
-        key: `conn:${connID}:db:${database}:schema:${targetSchema}:table:${t.name}`,
-        label: t.name,
-        type: 'table' as const,
-        connID,
-        database,
-        schema: targetSchema,
-        tableName: t.name,
-        loaded: false,
-        children: [],
-      }));
+      const tableNodes: TreeNode[] = tables.map(t => {
+        const isKafkaTopic = t.type === 'PARTITION';
+        return {
+          key: `conn:${connID}:db:${database}:schema:${targetSchema}:table:${t.name}`,
+          label: t.name,
+          type: isKafkaTopic ? 'kafka-topic' : 'table',
+          connID,
+          database,
+          schema: targetSchema,
+          tableName: t.name,
+          loaded: false,
+          children: [],
+        };
+      });
 
       const viewNodes: TreeNode[] = views.map((v: any) => ({
         key: `conn:${connID}:db:${database}:schema:${targetSchema}:view:${v.name}`,

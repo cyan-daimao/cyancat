@@ -93,6 +93,13 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
     { label: '删除表', action: 'drop-table', icon: 'Trash2', danger: true },
   ],
 
+  // ---- Kafka topic 节点 ----
+  'kafka-topic': [
+    { label: '查看消息', action: 'view-kafka-messages', icon: 'Eye' },
+    SEP,
+    { label: '复制 topic 名', action: 'copy-name', icon: 'Copy' },
+  ],
+
   // ---- 字段节点 ----
   column: [
     { label: '编辑字段', action: 'edit-column', icon: 'Pencil' },
@@ -134,13 +141,6 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
     SEP,
     { label: '复制视图名', action: 'copy-name', icon: 'Copy' },
     { label: '复制限定视图名', action: 'copy-full-name', icon: 'Copy' },
-  ],
-
-  // ---- Kafka topic 节点 ----
-  'kafka-topic': [
-    { label: '查看消息', action: 'view-kafka-messages', icon: 'Eye' },
-    SEP,
-    { label: '复制 topic 名', action: 'copy-name', icon: 'Copy' },
   ],
 
   // ---- 文件夹节点 ----

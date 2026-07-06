@@ -199,6 +199,17 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         return;
       }
       case 'open-table': {
+        if (connectionType === 'kafka') {
+          const topic = qualifiedKafkaTopic();
+          const sql = `CONSUME ${topic} LIMIT 100`;
+          openQueryTab({ title: topic, sql, context: queryContext() });
+          await execute({
+            connID: node.connID,
+            sql,
+            maxRows: 100,
+          });
+          return;
+        }
         const sql = `SELECT * FROM ${qualifiedTableName()} LIMIT 500;`;
         openQueryTab({ title: node.tableName, sql, context: queryContext() });
         await execute({
