@@ -15,7 +15,7 @@ import (
 type CreateConnectionRequest struct {
 	// Name 连接名称
 	Name string `json:"name" binding:"required"`
-	// Type 驱动类型（mysql / postgres / sqlite）
+	// Type 驱动类型（mysql / postgres / sqlite / starrocks）
 	Type string `json:"type" binding:"required"`
 	// Host 主机地址
 	Host string `json:"host" binding:"required"`
@@ -39,7 +39,7 @@ type CreateConnectionRequest struct {
 type UpdateConnectionRequest struct {
 	// Name 连接名称
 	Name string `json:"name" binding:"required"`
-	// Type 驱动类型（mysql / postgres / sqlite）
+	// Type 驱动类型（mysql / postgres / sqlite / starrocks）
 	Type string `json:"type" binding:"required"`
 	// Host 主机地址
 	Host string `json:"host" binding:"required"`
@@ -61,7 +61,7 @@ type UpdateConnectionRequest struct {
 
 // TestConnectionRequest 测试连接请求
 type TestConnectionRequest struct {
-	// Type 驱动类型
+	// Type 驱动类型（mysql / postgres / sqlite / starrocks）
 	Type string `json:"type" binding:"required"`
 	// Host 主机地址
 	Host string `json:"host" binding:"required"`

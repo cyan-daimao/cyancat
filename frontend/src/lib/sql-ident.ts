@@ -12,7 +12,7 @@ export function resolveDialect(type?: string): Dialect {
   const t = (type || '').trim().toLowerCase();
   if (/postgres|postgresql|pg/.test(t)) return 'postgres';
   if (/sqlite/.test(t)) return 'sqlite';
-  if (/mysql|maria/.test(t)) return 'mysql';
+  if (/mysql|maria|starrocks/.test(t)) return 'mysql';
   return 'mysql';
 }
 
@@ -37,10 +37,11 @@ export function quoteIdent(name: string, dialect: Dialect): string {
 }
 
 /**
- * 构造限定表名（schema.table / database.table）。
+ * 构造限定表名（schema.table / database.table / catalog.database.table）。
  * - postgres：`"schema"."table"`，schema 缺省 `public`。
  * - sqlite：`"main"."table"`。
  * - mysql：`` `database`.`table` ``。
+ * 如需三层限定（如 StarRocks catalog.database.table），请直接拼接三层。
  */
 export function qualifiedTableName(opts: {
   dialect: Dialect;

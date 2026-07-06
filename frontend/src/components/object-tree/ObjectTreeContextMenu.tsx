@@ -78,7 +78,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
   const qualifiedName = (): string => {
     const parts: string[] = [];
     if (node.database) parts.push(node.database);
-    if (node.schema && node.schema !== node.database) parts.push(node.schema);
+    if (node.schema) parts.push(node.schema);
     if (node.tableName) parts.push(node.tableName);
     if (node.columnName) parts.push(node.columnName);
     if (parts.length === 0) parts.push(node.label);
@@ -97,7 +97,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
       : node.schema;
     const parts = [conn?.name || `连接 ${node.connID}`];
     if (database) parts.push(database);
-    if (schema && schema !== database) parts.push(schema);
+    if (schema) parts.push(schema);
     return {
       connID: node.connID,
       connectionType: conn?.type,
@@ -113,12 +113,17 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
     return node.database!;
   };
   const tableScope = (): string => node.schema || defaultSchema();
-  const qualifiedTableName = (): string => qualifiedTableNameShared({
-    dialect: dialect(),
-    database: node.database,
-    schema: tableScope(),
-    table: node.tableName!,
-  });
+  const qualifiedTableName = (): string => {
+    if (connectionType === 'starrocks') {
+      return `${quoteIdent(node.database!)}.${quoteIdent(tableScope())}.${quoteIdent(node.tableName!)}`;
+    }
+    return qualifiedTableNameShared({
+      dialect: dialect(),
+      database: node.database,
+      schema: tableScope(),
+      table: node.tableName!,
+    });
+  };
 
   /** 统一 action 派发 */
   const dispatchAction = async (action: string) => {
@@ -334,7 +339,7 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         if (node.type === 'connection') {
           await loadDatabases(node.connID);
         } else if (node.type === 'database') {
-          if (getConnectionType() === 'postgres') {
+          if (getConnectionType() === 'postgres' || getConnectionType() === 'starrocks') {
             await loadSchemas(node.connID, node.database!);
           } else {
             await loadTables(node.connID, node.database!, node.schema || node.database!);

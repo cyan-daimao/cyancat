@@ -17,6 +17,7 @@ import (
 	"cyancat/internal/infra/driver"
 	mysqldriver "cyancat/internal/infra/driver/mysql"
 	postgresdriver "cyancat/internal/infra/driver/postgres"
+	starrocksdriver "cyancat/internal/infra/driver/starrocks"
 	sqlitedriver "cyancat/internal/infra/driver/sqlite"
 	"cyancat/internal/infra/eventbus"
 	"cyancat/internal/infra/keychain"
@@ -39,6 +40,7 @@ func main() {
 	driver.Register(mysqldriver.New())
 	driver.Register(postgresdriver.New())
 	driver.Register(sqlitedriver.New())
+	driver.Register(starrocksdriver.New())
 
 	// 3. 初始化本地 SQLite
 	dbPath := dbPath()

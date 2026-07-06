@@ -59,9 +59,7 @@ const SqlWorkspace: React.FC = () => {
     const schema = conn?.type === 'sqlite' ? (selectedNode.schema || 'main') : selectedNode.schema;
     const parts = [conn?.name || `连接 ${selectedNode.connID}`];
     if (database) parts.push(database);
-    if (schema && schema !== database) {
-      parts.push(schema);
-    }
+    if (schema) parts.push(schema);
     return {
       connID: selectedNode.connID,
       connectionType: conn?.type,

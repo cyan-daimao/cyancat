@@ -62,6 +62,11 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onCollapse 
   const getConnectionType = (connID: number) =>
     connections.find(conn => conn.id === connID)?.type;
 
+  const needsSchemaLayer = (connID: number) => {
+    const t = getConnectionType(connID);
+    return t === 'postgres' || t === 'starrocks';
+  };
+
   // 点击连接根节点：未打开则 open + 展开 + 拉数据库列表；已打开则切换展开/收起
   const handleConnectionClick = async (node: TreeNode) => {
     const id = node.connID;
@@ -116,7 +121,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onCollapse 
 
     if (node.type === 'database' && !node.loaded) {
       setLoading(node.key, true);
-      if (getConnectionType(node.connID) === 'postgres') {
+      if (needsSchemaLayer(node.connID)) {
         await loadSchemas(node.connID, node.database!);
       } else {
         await loadTables(node.connID, node.database!, node.schema || node.database!);
@@ -317,6 +322,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onCollapse 
   // 节点是否应被视为展开（搜索态下，匹配子树的祖先一律视为展开）
   const isExpanded = (key: string) =>
     expandedKeys.has(key) || (isSearching && autoExpandKeys.has(key));
+
+  const isStarRocks = (connID: number) => getConnectionType(connID) === 'starrocks';
 
   return (
     <div className="flex flex-col h-full">

@@ -40,6 +40,10 @@ function normalizeSchema(ctx: SqlHintContext): string {
   return (ctx.database || '').trim();
 }
 
+function isThreeLayer(ctx: SqlHintContext): boolean {
+  return ctx.connectionType === 'starrocks';
+}
+
 export function normalizeHintContext(ctx: SqlHintContext): (SqlHintContext & { database: string; schema: string }) | null {
   const database = (ctx.database || '').trim();
   if (!ctx.connID || !database) return null;
@@ -81,6 +85,11 @@ export const useSqlHintStore = create<SqlHintState>((set, get) => ({
   ensureCatalog: async (ctx) => {
     const normalized = normalizeHintContext(ctx);
     if (!normalized) return null;
+
+    // StarRocks 是 catalog-database-table 三层，必须同时有 database(catalog) 和 schema(database)
+    if (isThreeLayer(normalized) && !normalized.schema) {
+      return null;
+    }
 
     const key = hintCatalogKey(normalized)!;
     const existing = get().catalogs[key];

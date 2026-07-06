@@ -240,6 +240,19 @@ func (s *QueryServiceImpl) prepareExecutionConn(ctx context.Context, cmd *Execut
 			return nil, nil, err
 		}
 		return conn, func() {}, nil
+	case driver.StarRocks:
+		catalog, dbName := pickCatalogDatabase(database, schema)
+		if catalog != "" {
+			if _, err := conn.Execute(ctx, "SET CATALOG "+quoteMySQLIdent(catalog)); err != nil {
+				return nil, nil, err
+			}
+		}
+		if dbName != "" {
+			if _, err := conn.Execute(ctx, "USE "+quoteMySQLIdent(dbName)); err != nil {
+				return nil, nil, err
+			}
+		}
+		return conn, func() {}, nil
 	case driver.PostgreSQL:
 		execConn, cleanup, err := conn.WithDatabase(ctx, database)
 		if err != nil {
@@ -479,6 +492,20 @@ func quoteMySQLIdent(ident string) string {
 	}
 	b.WriteByte('`')
 	return b.String()
+}
+
+// pickCatalogDatabase 解析 StarRocks 的 catalog.database 形式。
+// schema 优先作为 database；schema 为空时尝试从 database 中按 "." 拆分。
+func pickCatalogDatabase(database, schema string) (catalog, dbName string) {
+	catalog = strings.TrimSpace(database)
+	dbName = strings.TrimSpace(schema)
+	if dbName != "" {
+		return catalog, dbName
+	}
+	if idx := strings.Index(catalog, "."); idx > 0 {
+		return catalog[:idx], catalog[idx+1:]
+	}
+	return catalog, ""
 }
 
 func quotePostgresIdent(ident string) string {

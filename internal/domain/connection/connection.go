@@ -163,6 +163,8 @@ func (c *Connection) normalize() {
 			c.Port = 5432
 		case driver.SQLite:
 			c.Port = 0
+		case driver.StarRocks:
+			c.Port = 9030
 		}
 	}
 

@@ -122,6 +122,11 @@ func (c *Conn) Inspector() driver.Inspector {
 	return c.inspector
 }
 
+// DB 返回底层 *sql.DB，供同项目其他驱动包复用连接。
+func (c *Conn) DB() *sql.DB {
+	return c.db
+}
+
 // DDL 返回 DDL 生成器
 func (c *Conn) DDL() driver.DDLGenerator {
 	return c.ddl

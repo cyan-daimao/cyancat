@@ -63,7 +63,7 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
       ...f,
       type,
       host: type === 'sqlite' ? '' : (f.host || '127.0.0.1'),
-      port: type === 'mysql' ? 3306 : type === 'postgres' ? 5432 : 0,
+      port: type === 'mysql' ? 3306 : type === 'postgres' ? 5432 : type === 'starrocks' ? 9030 : 0,
       user: type === 'sqlite' ? '' : (f.user || 'root'),
       password: type === 'sqlite' ? '' : f.password,
       database: type === 'sqlite' ? '' : f.database,
@@ -159,6 +159,7 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
                 <SelectContent>
                   <SelectItem value="mysql">MySQL</SelectItem>
                   <SelectItem value="postgres">PostgreSQL</SelectItem>
+                  <SelectItem value="starrocks">StarRocks</SelectItem>
                   <SelectItem value="sqlite">SQLite</SelectItem>
                 </SelectContent>
               </Select>

@@ -19,12 +19,14 @@ const (
 	PostgreSQL DriverType = "postgres"
 	// SQLite SQLite 文件数据库驱动
 	SQLite DriverType = "sqlite"
+	// StarRocks StarRocks 驱动（MySQL 协议兼容）
+	StarRocks DriverType = "starrocks"
 )
 
 // IsValid 校验驱动类型是否合法
 func (t DriverType) IsValid() bool {
 	switch t {
-	case MySQL, PostgreSQL, SQLite:
+	case MySQL, PostgreSQL, SQLite, StarRocks:
 		return true
 	default:
 		return false
