@@ -52,13 +52,14 @@ function filterMenuItemsForConnectionType(items: MenuItemDef[], connectionType?:
 
 const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, children, onShowProperties }) => {
   const { setSelectedNode, loadDatabases, loadSchemas, loadTables, loadTableDetail, resetTree } = useSchemaStore();
-  const { openConnIds, openConnection, closeConnection, connections } = useConnectionStore();
+  const { openConnIds, openConnection, closeConnection, connections, deleteConnection } = useConnectionStore();
   const {
     openCreateDatabase,
     openTableDesigner,
     openDDLViewer,
     openDropTableConfirm,
     openDropDatabaseConfirm,
+    openDeleteConnectionConfirm,
   } = useDesignerStore();
   const { addEmptyResult, openQueryTab, execute } = useQueryStore();
 
@@ -157,6 +158,11 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
         } else {
           toast({ title: '连接属性', description: '未找到连接信息' });
         }
+        return;
+      }
+      case 'delete-connection': {
+        const conn = connections.find(c => c.id === node.connID);
+        openDeleteConnectionConfirm({ connID: node.connID, name: conn?.name || node.label });
         return;
       }
 

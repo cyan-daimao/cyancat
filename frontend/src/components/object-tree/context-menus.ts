@@ -42,6 +42,8 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
     { label: '连接属性', action: 'connection-properties', icon: 'Settings' },
     SEP,
     { label: '复制连接名称', action: 'copy-name', icon: 'Copy' },
+    SEP,
+    { label: '删除连接', action: 'delete-connection', icon: 'Trash2', danger: true },
   ],
 
   // ---- 数据库节点 ----
