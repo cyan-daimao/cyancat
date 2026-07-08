@@ -215,9 +215,15 @@ func (s *Server) handleExecute(ctx context.Context, request mcp.CallToolRequest)
 		if !s.allow["update"] {
 			return mcp.NewToolResultError("UPDATE is not allowed"), nil
 		}
+		if !hasWhereClause(sqlText) {
+			return mcp.NewToolResultError("UPDATE without WHERE is not allowed"), nil
+		}
 	case "delete":
 		if !s.allow["delete"] {
 			return mcp.NewToolResultError("DELETE is not allowed"), nil
+		}
+		if !hasWhereClause(sqlText) {
+			return mcp.NewToolResultError("DELETE without WHERE is not allowed"), nil
 		}
 	default:
 		return mcp.NewToolResultError("only INSERT, UPDATE or DELETE are allowed by execute tool"), nil
@@ -330,6 +336,85 @@ func classifySQL(sql string) string {
 		return "ddl"
 	}
 	return "other"
+}
+
+// hasWhereClause 检查 SQL 是否在顶层包含 WHERE 子句（忽略字符串字面量、注释和子查询中的 where）。
+func hasWhereClause(sql string) bool {
+	lower := strings.ToLower(sql)
+	depth := 0
+	inString := false
+	var stringChar byte
+
+	for i := 0; i < len(lower); {
+		c := lower[i]
+
+		// 字符串字面量（支持 ' " `，以及 MySQL 风格的 \ 转义）
+		if inString {
+			if c == '\\' && i+1 < len(lower) {
+				i += 2
+				continue
+			}
+			if c == stringChar {
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '\'' || c == '"' || c == '`' {
+			inString = true
+			stringChar = c
+			i++
+			continue
+		}
+
+		// 行注释 --
+		if c == '-' && i+1 < len(lower) && lower[i+1] == '-' {
+			for i < len(lower) && lower[i] != '\n' {
+				i++
+			}
+			continue
+		}
+
+		// 块注释 /* */
+		if c == '/' && i+1 < len(lower) && lower[i+1] == '*' {
+			i += 2
+			for i < len(lower)-1 && !(lower[i] == '*' && lower[i+1] == '/') {
+				i++
+			}
+			i += 2
+			continue
+		}
+
+		// 括号深度
+		if c == '(' {
+			depth++
+			i++
+			continue
+		}
+		if c == ')' {
+			if depth > 0 {
+				depth--
+			}
+			i++
+			continue
+		}
+
+		// 顶层 WHERE 关键字（要求不在字符串、注释、子查询内）
+		if depth == 0 && i+5 <= len(lower) && lower[i:i+5] == "where" {
+			beforeOK := i == 0 || !isIdentChar(lower[i-1])
+			afterOK := i+5 == len(lower) || !isIdentChar(lower[i+5])
+			if beforeOK && afterOK {
+				return true
+			}
+		}
+
+		i++
+	}
+	return false
+}
+
+func isIdentChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
 }
 
 func formatResult(result *driver.Result) *mcp.CallToolResult {

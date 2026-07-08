@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"cyancat/internal/infra/driver"
+
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 type mockExecutor struct {
@@ -114,5 +116,77 @@ func TestServerPermissionEnforcement(t *testing.T) {
 	// 仅做本地启动校验，具体工具权限由 handle 函数保证
 	if !strings.Contains(addr, "/sse") {
 		t.Fatalf("address should contain /sse, got %s", addr)
+	}
+}
+
+func TestHasWhereClause(t *testing.T) {
+	cases := []struct {
+		sql      string
+		expected bool
+	}{
+		{"UPDATE t SET a = 1", false},
+		{"UPDATE t SET a = 1 WHERE id = 1", true},
+		{"update t set a = 1 where id = 1", true},
+		{"UPDATE t SET a = 1\nWHERE id = 1", true},
+		{"UPDATE t SET a = (SELECT y FROM z WHERE x = 1)", false},
+		{"UPDATE t SET a = (SELECT y FROM z WHERE x = 1) WHERE id = 1", true},
+		{"UPDATE t SET name = 'where is it'", false},
+		{"UPDATE t SET name = 'where is it' WHERE id = 1", true},
+		{"UPDATE t SET name = `where` WHERE id = 1", true},
+		{"DELETE FROM t", false},
+		{"DELETE FROM t WHERE id = 1", true},
+		{"delete from t where id = 1", true},
+		{"DELETE FROM t WHERE id IN (SELECT id FROM z WHERE x = 1)", true},
+		{"DELETE FROM t -- where comment", false},
+		{"DELETE FROM t /* where */ WHERE id = 1", true},
+	}
+
+	for _, tc := range cases {
+		got := hasWhereClause(tc.sql)
+		if got != tc.expected {
+			t.Errorf("hasWhereClause(%q) = %v, want %v", tc.sql, got, tc.expected)
+		}
+	}
+}
+
+func TestHandleExecuteRequiresWhere(t *testing.T) {
+	exec := &mockExecutor{
+		executeFunc: func(ctx context.Context, sql string) (*driver.Result, error) {
+			return &driver.Result{RowsAffected: 1}, nil
+		},
+	}
+	allow := map[string]bool{"insert": true, "update": true, "delete": true}
+
+	srv, err := NewServer(1, "token", allow, exec)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+
+	// UPDATE without WHERE
+	res, err := srv.handleExecute(context.Background(), mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      "execute",
+			Arguments: map[string]any{"sql": "UPDATE t SET a = 1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleExecute returned error: %v", err)
+	}
+	if res.Content[0].(mcp.TextContent).Text != "UPDATE without WHERE is not allowed" {
+		t.Fatalf("expected WHERE error for UPDATE, got: %v", res.Content[0])
+	}
+
+	// DELETE without WHERE
+	res, err = srv.handleExecute(context.Background(), mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      "execute",
+			Arguments: map[string]any{"sql": "DELETE FROM t"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleExecute returned error: %v", err)
+	}
+	if res.Content[0].(mcp.TextContent).Text != "DELETE without WHERE is not allowed" {
+		t.Fatalf("expected WHERE error for DELETE, got: %v", res.Content[0])
 	}
 }
