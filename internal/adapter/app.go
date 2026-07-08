@@ -4,6 +4,7 @@ package adapter
 import (
 	"cyancat/internal/adapter/http"
 	"cyancat/internal/application/connectionservice"
+	"cyancat/internal/application/mcpservice"
 	"cyancat/internal/application/queryservice"
 	"cyancat/internal/application/schemaservice"
 )
@@ -16,6 +17,8 @@ type App struct {
 	QueryAPI *http.QueryAPI
 	// SchemaAPI 元数据查询 API
 	SchemaAPI *http.SchemaAPI
+	// McpAPI MCP Server 管理 API
+	McpAPI *http.McpAPI
 	// ExportAPI 文件导出 API
 	ExportAPI *http.ExportAPI
 	// FileDialogAPI 文件选择 API
@@ -27,11 +30,13 @@ func NewApp(
 	connectionService connectionservice.ConnectionService,
 	queryService queryservice.QueryService,
 	schemaService schemaservice.SchemaService,
+	mcpService mcpservice.McpService,
 ) *App {
 	return &App{
 		ConnectionAPI: http.NewConnectionAPI(connectionService),
 		QueryAPI:      http.NewQueryAPI(queryService),
 		SchemaAPI:     http.NewSchemaAPI(schemaService),
+		McpAPI:        http.NewMcpAPI(mcpService),
 		ExportAPI:     http.NewExportAPI(),
 		FileDialogAPI: http.NewFileDialogAPI(),
 	}

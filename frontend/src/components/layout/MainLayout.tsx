@@ -15,6 +15,7 @@ import DDLViewerDialog from '@/components/object-designer/DDLViewerDialog';
 import DropTableConfirmDialog from '@/components/object-designer/DropTableConfirmDialog';
 import DropDatabaseConfirmDialog from '@/components/object-designer/DropDatabaseConfirmDialog';
 import DeleteConnectionConfirmDialog from '@/components/object-designer/DeleteConnectionConfirmDialog';
+import McpServerDialog from '@/components/mcp/McpServerDialog';
 
 const DEFAULT_WIDTH = 256;
 const MIN_WIDTH = 160;
@@ -196,6 +197,7 @@ const MainLayout: React.FC = () => {
       <DropTableConfirmDialog />
       <DropDatabaseConfirmDialog />
       <DeleteConnectionConfirmDialog />
+      <McpServerDialog />
       <ConnectionDialog
         open={showConnectionDialog}
         onOpenChange={(open) => {

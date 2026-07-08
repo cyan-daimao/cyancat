@@ -41,6 +41,8 @@ export const contextMenuConfig: Record<string, MenuItemDef[]> = {
     { label: '刷新', action: 'refresh', icon: 'RefreshCw', disabled: needsOpenConn },
     { label: '连接属性', action: 'connection-properties', icon: 'Settings' },
     SEP,
+    { label: '开启 MCP Server', action: 'open-mcp-server', icon: 'Bot', disabled: needsOpenConn },
+    SEP,
     { label: '复制连接名称', action: 'copy-name', icon: 'Copy' },
     SEP,
     { label: '删除连接', action: 'delete-connection', icon: 'Trash2', danger: true },

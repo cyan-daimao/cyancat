@@ -87,8 +87,12 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 		return nil, fmt.Errorf("starrocks/inspector: database is required")
 	}
 
-	q := fmt.Sprintf("SHOW TABLES FROM %s.%s", quoteIdent(catalog), quoteIdent(dbName))
-	rows, err := i.db.QueryContext(ctx, q)
+	const q = `SELECT TABLE_NAME, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
+		FROM INFORMATION_SCHEMA.TABLES
+		WHERE TABLE_CATALOG = ? AND TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
+		ORDER BY TABLE_NAME`
+
+	rows, err := i.db.QueryContext(ctx, q, catalog, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("starrocks/inspector: list tables from %s.%s: %w", catalog, dbName, err)
 	}
@@ -96,11 +100,12 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 
 	var result []driver.Table
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var t driver.Table
+		if err := rows.Scan(&t.Name, &t.Comment, &t.RowCount); err != nil {
 			return nil, err
 		}
-		result = append(result, driver.Table{Name: name, Type: "BASE TABLE"})
+		t.Type = "BASE TABLE"
+		result = append(result, t)
 	}
 	return result, rows.Err()
 }

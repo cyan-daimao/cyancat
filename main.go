@@ -9,19 +9,22 @@ import (
 	"cyancat/internal/adapter"
 	adapterhttp "cyancat/internal/adapter/http"
 	"cyancat/internal/application/connectionservice"
+	"cyancat/internal/application/mcpservice"
 	"cyancat/internal/application/queryservice"
 	"cyancat/internal/application/schemaservice"
 	"cyancat/internal/infra/db"
 	"cyancat/internal/infra/db/connectionrepo"
 	"cyancat/internal/infra/db/historyrepo"
+	"cyancat/internal/infra/db/mcprepo"
 	"cyancat/internal/infra/driver"
 	mysqldriver "cyancat/internal/infra/driver/mysql"
 	postgresdriver "cyancat/internal/infra/driver/postgres"
-	starrocksdriver "cyancat/internal/infra/driver/starrocks"
 	sqlitedriver "cyancat/internal/infra/driver/sqlite"
+	starrocksdriver "cyancat/internal/infra/driver/starrocks"
 	"cyancat/internal/infra/eventbus"
 	"cyancat/internal/infra/keychain"
 	"cyancat/internal/infra/logger"
+	"cyancat/internal/infra/mcpserver"
 	"cyancat/internal/infra/session"
 
 	"github.com/wailsapp/wails/v2"
@@ -56,6 +59,11 @@ func main() {
 		logger.L().Fatal().Err(err).Msg("history migration failed")
 	}
 
+	mcpRepo := mcprepo.NewMcpServerRepository()
+	if err := mcpRepo.AutoMigrate(); err != nil {
+		logger.L().Fatal().Err(err).Msg("mcp server migration failed")
+	}
+
 	// 5. 初始化 Keychain（V1.0 使用 AES 兜底）
 	if err := keychain.Init(); err != nil {
 		logger.L().Warn().Err(err).Msg("keychain init failed, using fallback mode")
@@ -71,8 +79,11 @@ func main() {
 	historyRepo := historyrepo.NewQueryHistoryRepository()
 	queryService := queryservice.NewQueryServiceImpl(sessionManager, bus, historyRepo)
 	schemaService := schemaservice.NewSchemaServiceImpl(sessionManager)
+	mcpManager := mcpserver.NewManager()
+	connectionService.SetMcpStopper(mcpManager)
+	mcpService := mcpservice.NewMcpServiceImpl(mcpRepo, connectionService, queryService, sessionManager, mcpManager)
 
-	app := adapter.NewApp(connectionService, queryService, schemaService)
+	app := adapter.NewApp(connectionService, queryService, schemaService, mcpService)
 
 	// 7. 启动 Wails
 	if err := wails.Run(&options.App{
@@ -90,7 +101,10 @@ func main() {
 			logger.L().Info().Msg("cyancat started")
 		},
 		OnShutdown: func(ctx context.Context) {
-			// 应用退出时清理所有活跃数据库连接
+			// 应用退出时清理所有活跃数据库连接与 MCP Server
+			if err := mcpManager.StopAll(); err != nil {
+				logger.L().Warn().Err(err).Msg("stop mcp servers on shutdown")
+			}
 			if err := sessionManager.CloseAll(); err != nil {
 				logger.L().Warn().Err(err).Msg("close sessions on shutdown")
 			}
@@ -103,6 +117,7 @@ func main() {
 			app.ConnectionAPI,
 			app.QueryAPI,
 			app.SchemaAPI,
+			app.McpAPI,
 			app.ExportAPI,
 			app.FileDialogAPI,
 		},

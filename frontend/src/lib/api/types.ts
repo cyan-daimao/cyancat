@@ -295,3 +295,25 @@ export interface DropTableRequest {
   schema: string;
   name: string;
 }
+
+// MCP Server DTOs
+export interface McpServerStatusDTO {
+  connID: number;
+  enabled: boolean;
+  address: string;
+  token: string;
+  allowSelect: boolean;
+  allowInsert: boolean;
+  allowUpdate: boolean;
+  allowDelete: boolean;
+  allowDDL: boolean;
+}
+
+export interface StartMcpServerRequest {
+  connID: number;
+  allowSelect: boolean;
+  allowInsert: boolean;
+  allowUpdate: boolean;
+  allowDelete: boolean;
+  allowDDL: boolean;
+}
