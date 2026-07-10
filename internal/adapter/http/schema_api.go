@@ -42,11 +42,17 @@ func (a *SchemaAPI) ListSchemas(connID int64, database string) *api.Response[[]*
 }
 
 // ListTables 列出表
-func (a *SchemaAPI) ListTables(connID int64, database, schema string) *api.Response[[]*dto.TableDTO] {
+func (a *SchemaAPI) ListTables(connID int64, database, schema string, limit, offset int) *api.Response[[]*dto.TableDTO] {
 	if connID <= 0 {
 		return api.Fail[[]*dto.TableDTO](api.BadRequestCode, nil, "connID must be positive")
 	}
-	list, err := a.svc.ListTables(&schemaservice.ListTablesQuery{ConnID: connID, Database: database, Schema: schema})
+	list, err := a.svc.ListTables(&schemaservice.ListTablesQuery{
+		ConnID:   connID,
+		Database: database,
+		Schema:   schema,
+		Limit:    limit,
+		Offset:   offset,
+	})
 	if err != nil {
 		return api.Fail[[]*dto.TableDTO](api.ErrorCode, nil, err.Error())
 	}
@@ -54,15 +60,41 @@ func (a *SchemaAPI) ListTables(connID int64, database, schema string) *api.Respo
 }
 
 // ListViews 列出视图
-func (a *SchemaAPI) ListViews(connID int64, database, schema string) *api.Response[[]*dto.ViewDTO] {
+func (a *SchemaAPI) ListViews(connID int64, database, schema string, limit, offset int) *api.Response[[]*dto.ViewDTO] {
 	if connID <= 0 {
 		return api.Fail[[]*dto.ViewDTO](api.BadRequestCode, nil, "connID must be positive")
 	}
-	list, err := a.svc.ListViews(&schemaservice.ListTablesQuery{ConnID: connID, Database: database, Schema: schema})
+	list, err := a.svc.ListViews(
+		&schemaservice.ListTablesQuery{
+			ConnID:   connID,
+			Database: database,
+			Schema:   schema,
+			Limit:    limit,
+			Offset:   offset,
+		})
 	if err != nil {
 		return api.Fail[[]*dto.ViewDTO](api.ErrorCode, nil, err.Error())
 	}
 	return api.Success(dto.ToViewDTOs(list))
+}
+
+// SearchTables 按关键字搜索表和视图
+func (a *SchemaAPI) SearchTables(req *dto.SearchTablesRequest) *api.Response[[]*dto.TableDTO] {
+	if req == nil || req.ConnID <= 0 {
+		return api.Fail[[]*dto.TableDTO](api.BadRequestCode, nil, "connID must be positive")
+	}
+	list, err := a.svc.SearchTables(
+		&schemaservice.SearchTablesQuery{
+			ConnID:   req.ConnID,
+			Database: req.Database,
+			Schema:   req.Schema,
+			Keyword:  req.Keyword,
+			Limit:    req.Limit,
+		})
+	if err != nil {
+		return api.Fail[[]*dto.TableDTO](api.ErrorCode, nil, err.Error())
+	}
+	return api.Success(dto.ToTableDTOs(list))
 }
 
 // DescribeTable 描述表结构

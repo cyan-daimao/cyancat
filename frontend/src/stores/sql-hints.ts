@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { schemaApi } from '@/lib/api/schema';
-import type { ColumnDTO, TableDTO, ViewDTO } from '@/lib/api/types';
+import type { ColumnDTO, TableDTO } from '@/lib/api/types';
 
 export interface SqlHintContext {
   connID: number;
@@ -15,18 +15,15 @@ export interface SqlHintCatalog {
   connectionType?: string;
   database: string;
   schema: string;
-  tables: TableDTO[];
-  views: ViewDTO[];
   columnsByTable: Record<string, ColumnDTO[]>;
-  loading: boolean;
-  error?: string;
-  loadedAt?: number;
 }
 
 interface SqlHintState {
   catalogs: Record<string, SqlHintCatalog>;
-  ensureCatalog: (ctx: SqlHintContext) => Promise<SqlHintCatalog | null>;
+  searchCache: Record<string, TableDTO[]>;
+  ensureCatalog: (ctx: SqlHintContext) => SqlHintCatalog | null;
   ensureTableColumns: (ctx: SqlHintContext, table: string) => Promise<ColumnDTO[]>;
+  searchTables: (ctx: SqlHintContext, keyword: string) => Promise<TableDTO[]>;
   invalidateCatalog: (ctx: SqlHintContext) => void;
   clearConnection: (connID: number) => void;
   getCatalog: (ctx: SqlHintContext) => SqlHintCatalog | null;
@@ -38,10 +35,6 @@ function normalizeSchema(ctx: SqlHintContext): string {
   if (ctx.connectionType === 'postgres') return 'public';
   if (ctx.connectionType === 'sqlite') return 'main';
   return (ctx.database || '').trim();
-}
-
-function isThreeLayer(ctx: SqlHintContext): boolean {
-  return ctx.connectionType === 'starrocks';
 }
 
 export function normalizeHintContext(ctx: SqlHintContext): (SqlHintContext & { database: string; schema: string }) | null {
@@ -66,115 +59,66 @@ function tableKey(name: string): string {
 
 function findRelationName(catalog: SqlHintCatalog, name: string): string | null {
   const target = tableKey(name);
-  const table = catalog.tables.find(t => tableKey(t.name) === target);
-  if (table) return table.name;
-  const view = catalog.views.find(v => tableKey(v.name) === target);
-  return view?.name || null;
+  const cached = Object.keys(catalog.columnsByTable).find(k => tableKey(k) === target);
+  return cached || null;
 }
-
-const catalogInflight: Partial<Record<string, Promise<SqlHintCatalog | null>>> = {};
 
 export const useSqlHintStore = create<SqlHintState>((set, get) => ({
   catalogs: {},
+  searchCache: {},
 
   getCatalog: (ctx) => {
     const key = hintCatalogKey(ctx);
     return key ? get().catalogs[key] || null : null;
   },
 
-  ensureCatalog: async (ctx) => {
+  ensureCatalog: (ctx) => {
     const normalized = normalizeHintContext(ctx);
     if (!normalized) return null;
-
-    // StarRocks 是 catalog-database-table 三层，必须同时有 database(catalog) 和 schema(database)
-    if (isThreeLayer(normalized) && !normalized.schema) {
-      return null;
-    }
-
     const key = hintCatalogKey(normalized)!;
     const existing = get().catalogs[key];
-    if (existing?.loadedAt) {
-      return existing;
+    if (existing) return existing;
+
+    const catalog: SqlHintCatalog = {
+      key,
+      connID: normalized.connID,
+      connectionType: normalized.connectionType,
+      database: normalized.database,
+      schema: normalized.schema,
+      columnsByTable: {},
+    };
+    set(state => ({ catalogs: { ...state.catalogs, [key]: catalog } }));
+    return catalog;
+  },
+
+  searchTables: async (ctx, keyword) => {
+    const normalized = normalizeHintContext(ctx);
+    if (!normalized || !keyword.trim()) return [];
+
+    const cacheKey = `${normalized.connID}:${normalized.database}:${normalized.schema}:${keyword.trim().toLowerCase()}`;
+    const cached = get().searchCache[cacheKey];
+    if (cached) return cached;
+
+    try {
+      const list = await schemaApi.searchTables({
+        connID: normalized.connID,
+        database: normalized.database,
+        schema: normalized.schema,
+        keyword: keyword.trim(),
+        limit: 50,
+      });
+      set(state => ({ searchCache: { ...state.searchCache, [cacheKey]: list || [] } }));
+      return list || [];
+    } catch {
+      return [];
     }
-    const inflight = catalogInflight[key];
-    if (inflight) {
-      return inflight;
-    }
-
-    set(state => ({
-      catalogs: {
-        ...state.catalogs,
-        [key]: {
-          ...(state.catalogs[key] || {
-            key,
-            connID: normalized.connID,
-            connectionType: normalized.connectionType,
-            database: normalized.database,
-            schema: normalized.schema,
-            tables: [],
-            views: [],
-            columnsByTable: {},
-          }),
-          loading: true,
-          error: undefined,
-        },
-      },
-    }));
-
-    catalogInflight[key] = (async () => {
-      try {
-        const [tables, views] = await Promise.all([
-          schemaApi.listTables(normalized.connID, normalized.database, normalized.schema),
-          schemaApi.listViews(normalized.connID, normalized.database, normalized.schema).catch(() => [] as ViewDTO[]),
-        ]);
-        const catalog: SqlHintCatalog = {
-          key,
-          connID: normalized.connID,
-          connectionType: normalized.connectionType,
-          database: normalized.database,
-          schema: normalized.schema,
-          tables: tables || [],
-          views: views || [],
-          columnsByTable: get().catalogs[key]?.columnsByTable || {},
-          loading: false,
-          loadedAt: Date.now(),
-        };
-        set(state => ({ catalogs: { ...state.catalogs, [key]: catalog } }));
-        return catalog;
-      } catch (e: any) {
-        set(state => ({
-          catalogs: {
-            ...state.catalogs,
-            [key]: {
-              ...(state.catalogs[key] || {
-                key,
-                connID: normalized.connID,
-                connectionType: normalized.connectionType,
-                database: normalized.database,
-                schema: normalized.schema,
-                tables: [],
-                views: [],
-                columnsByTable: {},
-              }),
-              loading: false,
-              error: e.message,
-            },
-          },
-        }));
-        return null;
-      } finally {
-        delete catalogInflight[key];
-      }
-    })();
-
-    return catalogInflight[key] || null;
   },
 
   ensureTableColumns: async (ctx, table) => {
     const normalized = normalizeHintContext(ctx);
     if (!normalized || !table.trim()) return [];
 
-    const catalog = await get().ensureCatalog(normalized);
+    const catalog = get().ensureCatalog(normalized);
     if (!catalog) return [];
 
     const relationName = findRelationName(catalog, table) || table.trim();
@@ -216,11 +160,14 @@ export const useSqlHintStore = create<SqlHintState>((set, get) => ({
   invalidateCatalog: (ctx) => {
     const key = hintCatalogKey(ctx);
     if (!key) return;
-    delete catalogInflight[key];
     set(state => {
       const catalogs = { ...state.catalogs };
       delete catalogs[key];
-      return { catalogs };
+      const searchCache: Record<string, TableDTO[]> = {};
+      Object.entries(state.searchCache).forEach(([k, v]) => {
+        if (!k.startsWith(`${ctx.connID}:`)) searchCache[k] = v;
+      });
+      return { catalogs, searchCache };
     });
   },
 
@@ -228,8 +175,11 @@ export const useSqlHintStore = create<SqlHintState>((set, get) => ({
     const catalogs: Record<string, SqlHintCatalog> = {};
     Object.entries(state.catalogs).forEach(([key, catalog]) => {
       if (catalog.connID !== connID) catalogs[key] = catalog;
-      else delete catalogInflight[key];
     });
-    return { catalogs };
+    const searchCache: Record<string, TableDTO[]> = {};
+    Object.entries(state.searchCache).forEach(([key, tables]) => {
+      if (!key.startsWith(`${connID}:`)) searchCache[key] = tables;
+    });
+    return { catalogs, searchCache };
   }),
 }));

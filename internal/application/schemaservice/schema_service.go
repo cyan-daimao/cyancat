@@ -11,6 +11,8 @@ type SchemaService interface {
 	ListTables(query *ListTablesQuery) ([]*TableBO, error)
 	// ListViews 列出视图
 	ListViews(query *ListTablesQuery) ([]*ViewBO, error)
+	// SearchTables 按关键字搜索表和视图
+	SearchTables(query *SearchTablesQuery) ([]*TableBO, error)
 	// DescribeTable 描述表（字段+索引+外键）
 	DescribeTable(query *DescribeTableQuery) (*TableDetailBO, error)
 	// ListIndexes 列出索引

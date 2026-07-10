@@ -23,6 +23,9 @@ func (m *mockSchemaService) ListTables(query *schemaservice.ListTablesQuery) ([]
 func (m *mockSchemaService) ListViews(query *schemaservice.ListTablesQuery) ([]*schemaservice.ViewBO, error) {
 	return nil, nil
 }
+func (m *mockSchemaService) SearchTables(query *schemaservice.SearchTablesQuery) ([]*schemaservice.TableBO, error) {
+	return m.tables, nil
+}
 func (m *mockSchemaService) DescribeTable(query *schemaservice.DescribeTableQuery) (*schemaservice.TableDetailBO, error) {
 	return &schemaservice.TableDetailBO{Columns: m.columns}, nil
 }

@@ -9,4 +9,5 @@ type CompleteQuery struct {
 	SQL            string
 	CursorLine     int // 1-based
 	CursorColumn   int // 1-based
+	Prefix         string // 当前光标处已输入的标识符前缀（用于表名搜索）
 }

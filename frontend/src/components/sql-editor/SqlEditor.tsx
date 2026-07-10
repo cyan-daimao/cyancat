@@ -79,6 +79,10 @@ function registerSqlCompletionProvider(monaco: any) {
         return { suggestions: [] };
       }
 
+      // 获取当前光标处已输入的标识符前缀，用于后端表名搜索
+      const word = model.getWordUntilPosition(position);
+      const prefix = word.word || '';
+
       try {
         const candidates = await sqlCompleteApi.complete({
           connID: ctx.connID,
@@ -88,6 +92,7 @@ function registerSqlCompletionProvider(monaco: any) {
           sql: model.getValue(),
           cursorLine: position.lineNumber,
           cursorColumn: position.column,
+          prefix,
         });
 
         const kindMap: Record<string, number> = {

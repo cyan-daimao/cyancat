@@ -77,8 +77,8 @@ func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.
 	return result, rows.Err()
 }
 
-// ListTables 列出指定 catalog.database 下的表
-func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]driver.Table, error) {
+// ListTables 列出指定 catalog.database 下的表（支持分页）
+func (i *inspector) ListTables(ctx context.Context, database, schema string, limit, offset int) ([]driver.Table, error) {
 	catalog, dbName := pickCatalogDatabase(database, schema)
 	if catalog == "" {
 		return nil, fmt.Errorf("starrocks/inspector: catalog is required")
@@ -87,10 +87,11 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 		return nil, fmt.Errorf("starrocks/inspector: database is required")
 	}
 
-	const q = `SELECT TABLE_NAME, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
+	const base = `SELECT TABLE_NAME, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
 		FROM INFORMATION_SCHEMA.TABLES
 		WHERE TABLE_CATALOG = ? AND TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
 		ORDER BY TABLE_NAME`
+	q := paginateQuerySR(base, limit, offset)
 
 	rows, err := i.db.QueryContext(ctx, q, catalog, dbName)
 	if err != nil {
@@ -110,17 +111,18 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 	return result, rows.Err()
 }
 
-// ListViews 列出指定 catalog.database 下的视图
-func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]driver.View, error) {
+// ListViews 列出指定 catalog.database 下的视图（支持分页）
+func (i *inspector) ListViews(ctx context.Context, database, schema string, limit, offset int) ([]driver.View, error) {
 	catalog, dbName := pickCatalogDatabase(database, schema)
 	if catalog == "" || dbName == "" {
 		return nil, nil
 	}
 
-	const q = `SELECT TABLE_NAME, IFNULL(TABLE_VIEW_DEFINITION, '')
+	const base = `SELECT TABLE_NAME, IFNULL(TABLE_VIEW_DEFINITION, '')
 		FROM INFORMATION_SCHEMA.VIEWS
 		WHERE TABLE_CATALOG = ? AND TABLE_SCHEMA = ?
 		ORDER BY TABLE_NAME`
+	q := paginateQuerySR(base, limit, offset)
 
 	rows, err := i.db.QueryContext(ctx, q, catalog, dbName)
 	if err != nil {
@@ -141,6 +143,80 @@ func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]d
 		result = append(result, v)
 	}
 	return result, rows.Err()
+}
+
+// SearchTables 按关键字搜索表和视图
+func (i *inspector) SearchTables(ctx context.Context, database, schema, keyword string, limit int) ([]driver.Table, error) {
+	catalog, dbName := pickCatalogDatabase(database, schema)
+	if catalog == "" || dbName == "" {
+		return nil, fmt.Errorf("starrocks/inspector: catalog and database are required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+
+	prefixRows, err := i.searchRelations(ctx, catalog, dbName, keyword+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(prefixRows) >= limit {
+		return prefixRows[:limit], nil
+	}
+
+	seen := make(map[string]bool, len(prefixRows))
+	for _, t := range prefixRows {
+		seen[t.Name] = true
+	}
+	likeRows, err := i.searchRelations(ctx, catalog, dbName, "%"+keyword+"%", limit)
+	if err != nil {
+		return prefixRows, nil
+	}
+	for _, t := range likeRows {
+		if seen[t.Name] {
+			continue
+		}
+		prefixRows = append(prefixRows, t)
+		if len(prefixRows) >= limit {
+			break
+		}
+	}
+	return prefixRows, nil
+}
+
+func (i *inspector) searchRelations(ctx context.Context, catalog, dbName, pattern string, limit int) ([]driver.Table, error) {
+	const q = `SELECT TABLE_NAME, TABLE_TYPE, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
+		FROM INFORMATION_SCHEMA.TABLES
+		WHERE TABLE_CATALOG = ? AND TABLE_SCHEMA = ? AND TABLE_NAME LIKE ?
+		ORDER BY TABLE_NAME
+		LIMIT ?`
+
+	rows, err := i.db.QueryContext(ctx, q, catalog, dbName, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("starrocks/inspector: search relations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []driver.Table
+	for rows.Next() {
+		var t driver.Table
+		if err := rows.Scan(&t.Name, &t.Type, &t.Comment, &t.RowCount); err != nil {
+			return nil, err
+		}
+		result = append(result, t)
+	}
+	return result, rows.Err()
+}
+
+// paginateQuerySR 为 StarRocks SQL 追加 LIMIT/OFFSET
+func paginateQuerySR(base string, limit, offset int) string {
+	if limit <= 0 {
+		return base
+	}
+	base += fmt.Sprintf(" LIMIT %d", limit)
+	if offset > 0 {
+		base += fmt.Sprintf(" OFFSET %d", offset)
+	}
+	return base
 }
 
 // DescribeTable 描述表结构

@@ -191,6 +191,22 @@ export interface ForeignKeyDTO {
   onDelete: string;
 }
 
+export interface ListTablesRequest {
+  connID: number;
+  database: string;
+  schema: string;
+  limit: number;
+  offset: number;
+}
+
+export interface SearchTablesRequest {
+  connID: number;
+  database: string;
+  schema: string;
+  keyword: string;
+  limit: number;
+}
+
 // DDL DTOs
 export interface CharsetDTO {
   name: string;
@@ -327,6 +343,7 @@ export interface SqlCompleteRequest {
   sql: string;
   cursorLine: number;
   cursorColumn: number;
+  prefix?: string;
 }
 
 // SqlCompleteCandidate 单个补全候选

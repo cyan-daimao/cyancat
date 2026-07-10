@@ -28,10 +28,11 @@ func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.
 	return []driver.Schema{{Name: "main"}}, nil
 }
 
-func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]driver.Table, error) {
-	const q = `SELECT name FROM sqlite_master
+func (i *inspector) ListTables(ctx context.Context, database, schema string, limit, offset int) ([]driver.Table, error) {
+	const base = `SELECT name FROM sqlite_master
 		WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
 		ORDER BY name`
+	q := paginateQuerySQLite(base, limit, offset)
 	rows, err := i.conn.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite/inspector: list tables: %w", err)
@@ -50,10 +51,11 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 	return result, rows.Err()
 }
 
-func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]driver.View, error) {
-	const q = `SELECT name, COALESCE(sql, '') FROM sqlite_master
+func (i *inspector) ListViews(ctx context.Context, database, schema string, limit, offset int) ([]driver.View, error) {
+	const base = `SELECT name, COALESCE(sql, '') FROM sqlite_master
 		WHERE type = 'view' AND name NOT LIKE 'sqlite_%'
 		ORDER BY name`
+	q := paginateQuerySQLite(base, limit, offset)
 	rows, err := i.conn.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite/inspector: list views: %w", err)
@@ -69,6 +71,46 @@ func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]d
 		result = append(result, v)
 	}
 	return result, rows.Err()
+}
+
+// SearchTables SQLite 下按关键字搜索表和视图
+func (i *inspector) SearchTables(ctx context.Context, database, schema, keyword string, limit int) ([]driver.Table, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	const q = `SELECT name, type, '', 0 FROM sqlite_master
+		WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' AND name LIKE ?
+		ORDER BY name
+		LIMIT ?`
+	rows, err := i.conn.db.QueryContext(ctx, q, "%"+keyword+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite/inspector: search relations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []driver.Table
+	for rows.Next() {
+		var t driver.Table
+		var typ string
+		if err := rows.Scan(&t.Name, &typ, &t.Comment, &t.RowCount); err != nil {
+			return nil, err
+		}
+		t.Type = typ
+		result = append(result, t)
+	}
+	return result, rows.Err()
+}
+
+// paginateQuerySQLite 为 SQLite SQL 追加 LIMIT/OFFSET
+func paginateQuerySQLite(base string, limit, offset int) string {
+	if limit <= 0 {
+		return base
+	}
+	base += fmt.Sprintf(" LIMIT %d", limit)
+	if offset > 0 {
+		base += fmt.Sprintf(" OFFSET %d", offset)
+	}
+	return base
 }
 
 func (i *inspector) DescribeTable(ctx context.Context, database, schema, table string) (*driver.TableDetail, error) {

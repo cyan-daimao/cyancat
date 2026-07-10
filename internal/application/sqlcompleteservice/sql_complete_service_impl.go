@@ -137,39 +137,62 @@ func (s *ServiceImpl) completeColumn(ctx context.Context, query *CompleteQuery, 
 }
 
 func (s *ServiceImpl) completeTable(ctx context.Context, query *CompleteQuery) []CompleteCandidate {
-	// 表名补全：列出当前 database/schema 下的表和视图
-	db := query.Database
-	schema := query.Schema
-	listQuery := &schemaservice.ListTablesQuery{
-		ConnID:   query.ConnID,
-		Database: db,
-		Schema:   schema,
-	}
+	// 表名补全：按当前输入前缀搜索；无前缀时返回前 50 个表/视图作为兜底
+	prefix := strings.TrimSpace(query.Prefix)
 
 	candidates := make([]CompleteCandidate, 0)
-	tables, err := s.schemaSvc.ListTables(listQuery)
-	if err == nil {
-		for i, t := range tables {
-			candidates = append(candidates, CompleteCandidate{
-				Label:      t.Name,
-				Kind:       KindTable,
-				Detail:     t.Comment,
-				InsertText: s.quoteIdentifier(t.Name, query.ConnectionType),
-				SortText:   fmt.Sprintf("1_%04d_%s", i, t.Name),
+	var list []*schemaservice.TableBO
+	var err error
+
+	if prefix == "" {
+		list, err = s.schemaSvc.ListTables(&schemaservice.ListTablesQuery{
+			ConnID:   query.ConnID,
+			Database: query.Database,
+			Schema:   query.Schema,
+			Limit:    50,
+			Offset:   0,
+		})
+		if err != nil {
+			return candidates
+		}
+		views, _ := s.schemaSvc.ListViews(&schemaservice.ListTablesQuery{
+			ConnID:   query.ConnID,
+			Database: query.Database,
+			Schema:   query.Schema,
+			Limit:    50,
+			Offset:   0,
+		})
+		for _, v := range views {
+			list = append(list, &schemaservice.TableBO{
+				Name: v.Name,
+				Type: "VIEW",
 			})
+		}
+	} else {
+		list, err = s.schemaSvc.SearchTables(&schemaservice.SearchTablesQuery{
+			ConnID:   query.ConnID,
+			Database: query.Database,
+			Schema:   query.Schema,
+			Keyword:  prefix,
+			Limit:    50,
+		})
+		if err != nil {
+			return candidates
 		}
 	}
-	views, err := s.schemaSvc.ListViews(listQuery)
-	if err == nil {
-		for i, v := range views {
-			candidates = append(candidates, CompleteCandidate{
-				Label:      v.Name,
-				Kind:       KindView,
-				Detail:     v.Definition,
-				InsertText: s.quoteIdentifier(v.Name, query.ConnectionType),
-				SortText:   fmt.Sprintf("2_%04d_%s", i, v.Name),
-			})
+
+	for i, t := range list {
+		kind := KindTable
+		if strings.EqualFold(t.Type, "VIEW") || strings.EqualFold(t.Type, "v") {
+			kind = KindView
 		}
+		candidates = append(candidates, CompleteCandidate{
+			Label:      t.Name,
+			Kind:       kind,
+			Detail:     t.Comment,
+			InsertText: s.quoteIdentifier(t.Name, query.ConnectionType),
+			SortText:   fmt.Sprintf("1_%04d_%s", i, t.Name),
+		})
 	}
 	return candidates
 }

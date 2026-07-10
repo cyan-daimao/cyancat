@@ -308,6 +308,34 @@ type AlterTableRequest struct {
 	Comment string `json:"comment"`
 }
 
+// ListTablesRequest 列出表/视图请求（支持分页）
+type ListTablesRequest struct {
+	// ConnID 连接 ID
+	ConnID int64 `json:"connID"`
+	// Database 数据库名
+	Database string `json:"database"`
+	// Schema schema 名
+	Schema string `json:"schema"`
+	// Limit 分页限制（<= 0 表示不限制）
+	Limit int `json:"limit"`
+	// Offset 分页偏移
+	Offset int `json:"offset"`
+}
+
+// SearchTablesRequest 搜索表/视图请求
+type SearchTablesRequest struct {
+	// ConnID 连接 ID
+	ConnID int64 `json:"connID"`
+	// Database 数据库名
+	Database string `json:"database"`
+	// Schema schema 名
+	Schema string `json:"schema"`
+	// Keyword 搜索关键字
+	Keyword string `json:"keyword"`
+	// Limit 返回数量限制（<= 0 时使用默认值 50）
+	Limit int `json:"limit"`
+}
+
 // GetCreateTableDDLRequest 获取建表 DDL 请求
 type GetCreateTableDDLRequest struct {
 	// ConnID 连接 ID

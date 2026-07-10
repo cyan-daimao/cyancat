@@ -1,14 +1,13 @@
 import React from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useConnectionStore } from '@/stores/connection';
-import { useSchemaStore } from '@/stores/schema';
+import { useSchemaStore, DEFAULT_TABLE_PAGE_SIZE, type TreeNode } from '@/stores/schema';
 import {
   ChevronRight, ChevronDown, ChevronLeft, Database, Server, Table, Eye, Columns,
   FolderOpen, Key, Link2, Loader2, FileType, Plus, Search, X,
 } from 'lucide-react';
-import type { TreeNode } from '@/stores/schema';
 import ObjectTreeContextMenu from './ObjectTreeContextMenu';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -27,6 +26,9 @@ const iconMap: Record<string, React.ReactNode> = {
 
 import type { ConnectionDTO } from '@/lib/api/types';
 
+const ROW_HEIGHT = 24;
+const OVERSCAN = 10;
+
 interface ObjectTreeProps {
   onCreateConnection?: () => void;
   onShowProperties?: (conn: ConnectionDTO) => void;
@@ -39,17 +41,21 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     trees,
     expandedKeys,
     selectedNode,
+    searchMap,
     setSelectedNode,
     loadDatabases,
     loadSchemas,
     loadTables,
+    loadMoreTables,
+    loadMoreViews,
+    searchTables,
     loadTableDetail,
     toggleExpand,
     resetTree,
   } = useSchemaStore();
   const [loadingKeys, setLoadingKeys] = React.useState<Set<string>>(new Set());
 
-  // 搜索关键字（前端过滤数据库 + 表/视图名称）
+  // 搜索关键字
   const [searchKeyword, setSearchKeyword] = React.useState('');
   const trimmedKeyword = searchKeyword.trim().toLowerCase();
   const isSearching = trimmedKeyword.length > 0;
@@ -70,12 +76,10 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     return t === 'postgres' || t === 'starrocks';
   };
 
-  // 点击连接根节点：未打开则 open + 展开 + 拉数据库列表；已打开则切换展开/收起
   const handleConnectionClick = async (node: TreeNode) => {
     const id = node.connID;
     const isOpen = openConnIds.has(id);
 
-    // 未打开 → 先 open
     if (!isOpen) {
       setLoading(node.key, true);
       const ok = await openConnection(id);
@@ -83,19 +87,16 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
         setLoading(node.key, false);
         return;
       }
-      // 展开并加载 databases
       if (!expandedKeys.has(node.key)) toggleExpand(node.key);
       await loadDatabases(id);
       setLoading(node.key, false);
       return;
     }
 
-    // 已打开 → 切换展开/收起
     if (expandedKeys.has(node.key)) {
       toggleExpand(node.key);
     } else {
       toggleExpand(node.key);
-      // 首次展开但没数据时，按需加载
       if (!trees[id] || trees[id].length === 0) {
         setLoading(node.key, true);
         await loadDatabases(id);
@@ -104,23 +105,20 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     }
   };
 
-  // 折叠图标的点击：仅切换 expand，不影响 open/close
   const handleChevronClick = async (e: React.MouseEvent, node: TreeNode) => {
     e.stopPropagation();
     if (node.type === 'connection') {
-      // 连接节点的展开走 handleConnectionClick 同样逻辑
       await handleConnectionClick(node);
       return;
     }
     await handleToggle(node);
   };
 
-  // 数据库/表节点：展开 + 懒加载
   const handleToggle = async (node: TreeNode) => {
     const expanding = !expandedKeys.has(node.key);
     toggleExpand(node.key);
 
-    if (!expanding) return; // 收起，不需加载
+    if (!expanding) return;
 
     if (node.type === 'database' && !node.loaded) {
       setLoading(node.key, true);
@@ -150,7 +148,6 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     }
   };
 
-  // 双击连接根节点 = 关闭连接（释放资源）
   const handleConnectionDoubleClick = async (e: React.MouseEvent, node: TreeNode) => {
     e.stopPropagation();
     if (openConnIds.has(node.connID)) {
@@ -159,13 +156,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     }
   };
 
-  /** 渲染节点附加标签（如字段类型、索引类型、外键引用） */
   const renderNodeBadge = (node: TreeNode): React.ReactNode | null => {
-    // 字段节点：从 label 中提取类型（已由 schema store 添加）
-    if (node.type === 'column') {
-      // label 格式为 "colName (type)"，类型已包含在 label 中
-      return null;
-    }
+    if (node.type === 'column') return null;
     if (node.type === 'index') {
       return (
         <span className="ml-auto text-[10px] px-1 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 leading-tight">
@@ -173,14 +165,10 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
         </span>
       );
     }
-    if (node.type === 'foreignKey') {
-      // FK 节点无额外标签，引用信息在 tooltip 中展示
-      return null;
-    }
+    if (node.type === 'foreignKey') return null;
     return null;
   };
 
-  /** 在 label 中高亮匹配片段 */
   const renderLabel = (label: string, matchable: boolean): React.ReactNode => {
     if (!isSearching || !matchable || !trimmedKeyword) return label;
     const lower = label.toLowerCase();
@@ -198,69 +186,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     );
   };
 
-  const renderNode = (node: TreeNode, depth: number = 0) => {
-    const expanded = isExpanded(node.key);
-    const isLeaf = node.type === 'column' || node.type === 'view' || node.type === 'index' || node.type === 'foreignKey';
-    const hasChildren = !isLeaf;
-    const isConn = node.type === 'connection';
-    const isLoading = loadingKeys.has(node.key);
-    const selected = selectedNode?.key === node.key;
-
-    const nodeElement = (
-      <div
-        className={`group flex items-center gap-1 px-1 py-0.5 cursor-pointer hover:bg-accent rounded-sm text-sm ${
-          selected ? 'bg-accent text-accent-foreground' : ''
-        }`}
-        style={{ paddingLeft: `${depth * 16 + 4}px` }}
-        onClick={() => handleNodeClick(node, hasChildren)}
-        onDoubleClick={isConn ? (e) => handleConnectionDoubleClick(e, node) : undefined}
-        title={isConn ? '点击展开/收起，双击关闭连接' : undefined}
-      >
-        {hasChildren ? (
-          <span onClick={(e) => handleChevronClick(e, node)} className="shrink-0">
-            {isLoading ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : expanded ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-          </span>
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
-        {iconMap[node.type] || <FileType className="h-4 w-4" />}
-        <span className="truncate">{renderLabel(node.label, isMatchableType(node.type))}</span>
-        {renderNodeBadge(node)}
-        {isConn && (
-          <span
-            className={`ml-auto h-2 w-2 rounded-full ${
-              openConnIds.has(node.connID) ? 'bg-green-500' : 'bg-muted-foreground/30'
-            }`}
-          />
-        )}
-      </div>
-    );
-
-    return (
-      <div key={node.key}>
-        <ObjectTreeContextMenu node={node} onShowProperties={onShowProperties}>
-          {nodeElement}
-        </ObjectTreeContextMenu>
-        {expanded && node.children?.map((child) => renderNode(child, depth + 1))}
-        {expanded && hasChildren && (!node.children || node.children.length === 0) && !isLoading && node.loaded && (
-          <div
-            className="text-xs text-muted-foreground italic"
-            style={{ paddingLeft: `${(depth + 1) * 16 + 16}px` }}
-          >
-            (空)
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 构建连接树：每个连接是根节点
+  // 构建连接根节点
   const buildTree = (): TreeNode[] => {
     return connections.map((conn) => {
       const existingChildren = trees[conn.id] || [];
@@ -275,58 +201,158 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     });
   };
 
-  /**
-   * 节点自身是否匹配搜索关键字。
-   * 仅匹配数据库 / schema / 表 / 视图（用户需求：数据库 + 表）。
-   * 连接节点也参与匹配（按连接名）。
-   */
-  const isMatchableType = (t: TreeNode['type']) =>
-    t === 'connection' || t === 'database' || t === 'schema' || t === 'table' || t === 'view';
-
-  const nodeMatches = (node: TreeNode): boolean => {
-    if (!isMatchableType(node.type)) return false;
-    // 表节点：tableName 更精准（label 含原始名即可）
-    const hay = (node.tableName || node.label || '').toLowerCase();
-    return hay.includes(trimmedKeyword);
-  };
-
-  /**
-   * 过滤树：保留自身匹配或拥有匹配后代的节点。
-   * 同时收集需要自动展开的祖先 key，用于搜索时撑开层级。
-   */
-  const filterTree = (
-    nodes: TreeNode[],
-    autoExpand: Set<string>,
-  ): TreeNode[] => {
-    const out: TreeNode[] = [];
+  // 扁平化可见节点
+  const flattenVisible = (nodes: TreeNode[], depth = 0): { node: TreeNode; depth: number }[] => {
+    const out: { node: TreeNode; depth: number }[] = [];
     for (const node of nodes) {
-      const selfMatch = nodeMatches(node);
-      const filteredChildren = node.children
-        ? filterTree(node.children, autoExpand)
-        : undefined;
-      const hasChildMatch = !!filteredChildren && filteredChildren.length > 0;
-
-      if (selfMatch || hasChildMatch) {
-        if (hasChildMatch) autoExpand.add(node.key);
-        out.push({
-          ...node,
-          // 自身匹配时仍展示其原始子节点（不剪枝），方便用户继续浏览
-          children: selfMatch ? node.children : filteredChildren,
-        });
+      out.push({ node, depth });
+      const expanded = expandedKeys.has(node.key) || (isSearching && node.type === 'connection');
+      if (expanded && node.children) {
+        out.push(...flattenVisible(node.children, depth + 1));
       }
     }
     return out;
   };
 
   const rawTree = buildTree();
-  const autoExpandKeys = React.useMemo(() => new Set<string>(), [trimmedKeyword]);
-  const treeData = isSearching ? filterTree(rawTree, autoExpandKeys) : rawTree;
+  const flatItems = flattenVisible(rawTree);
 
-  // 节点是否应被视为展开（搜索态下，匹配子树的祖先一律视为展开）
-  const isExpanded = (key: string) =>
-    expandedKeys.has(key) || (isSearching && autoExpandKeys.has(key));
+  // 搜索触发
+  React.useEffect(() => {
+    if (!isSearching) return;
+    const runSearch = async () => {
+      for (const conn of connections) {
+        const connNode = rawTree.find(n => n.connID === conn.id);
+        if (!connNode || !connNode.children) continue;
+        // 对每个已展开的 database/schema 发起搜索
+        for (const dbNode of connNode.children) {
+          if (expandedKeys.has(dbNode.key) && dbNode.database) {
+            if (needsSchemaLayer(conn.id)) {
+              for (const schemaNode of dbNode.children || []) {
+                if (expandedKeys.has(schemaNode.key) && schemaNode.schema) {
+                  await searchTables(conn.id, dbNode.database!, schemaNode.schema!, trimmedKeyword);
+                }
+              }
+            } else {
+              await searchTables(conn.id, dbNode.database!, dbNode.database!, trimmedKeyword);
+            }
+          }
+        }
+      }
+    };
+    runSearch();
+  }, [trimmedKeyword, expandedKeys, connections, rawTree, searchTables]);
 
-  const isStarRocks = (connID: number) => getConnectionType(connID) === 'starrocks';
+  // 搜索结果覆盖：把匹配节点替换进 flatItems
+  const getVisibleItems = (): { node: TreeNode; depth: number }[] => {
+    if (!isSearching) return flatItems;
+
+    const out: { node: TreeNode; depth: number }[] = [];
+    for (const { node, depth } of flatItems) {
+      out.push({ node, depth });
+      if ((node.type === 'database' || node.type === 'schema') && expandedKeys.has(node.key)) {
+        const searchState = searchMap[node.key];
+        if (searchState?.results.length) {
+          for (const child of searchState.results) {
+            out.push({ node: child, depth: depth + 1 });
+          }
+        }
+      }
+    }
+    return out;
+  };
+
+  const visibleItems = getVisibleItems();
+
+  // 虚拟滚动
+  const parentRef = React.useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: visibleItems.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+
+  // 滚动到底加载更多
+  const lastScrollTop = React.useRef(0);
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const { scrollTop, scrollHeight, clientHeight } = target;
+    const isScrollingDown = scrollTop > lastScrollTop.current;
+    lastScrollTop.current = scrollTop;
+
+    if (!isScrollingDown) return;
+    if (scrollHeight - scrollTop - clientHeight > ROW_HEIGHT * 2) return;
+
+    // 找到当前可视区末尾附近的 database/schema 节点，尝试加载更多
+    for (let i = virtualItems.length - 1; i >= 0; i--) {
+      const item = virtualItems[i];
+      const { node } = visibleItems[item.index];
+      if (node.type === 'database' || node.type === 'schema') {
+        if (node.hasMoreTables) {
+          loadMoreTables(node.key);
+          break;
+        }
+        if (node.hasMoreViews) {
+          loadMoreViews(node.key);
+          break;
+        }
+      }
+    }
+  };
+
+  const isLeaf = (node: TreeNode) =>
+    node.type === 'column' || node.type === 'view' || node.type === 'index' || node.type === 'foreignKey';
+
+  const isMatchableType = (t: TreeNode['type']) =>
+    t === 'connection' || t === 'database' || t === 'schema' || t === 'table' || t === 'view';
+
+  const renderRow = (index: number, style: React.CSSProperties) => {
+    const { node, depth } = visibleItems[index];
+    const expanded = expandedKeys.has(node.key);
+    const hasChildren = !isLeaf(node);
+    const isLoading = loadingKeys.has(node.key);
+    const selected = selectedNode?.key === node.key;
+
+    return (
+      <ObjectTreeContextMenu key={node.key} node={node} onShowProperties={onShowProperties}>
+        <div
+          className={`group flex items-center gap-1 px-1 cursor-pointer hover:bg-accent rounded-sm text-sm ${
+            selected ? 'bg-accent text-accent-foreground' : ''
+          }`}
+          style={{ ...style, paddingLeft: `${depth * 16 + 4}px` }}
+          onClick={() => handleNodeClick(node, hasChildren)}
+          onDoubleClick={node.type === 'connection' ? (e) => handleConnectionDoubleClick(e, node) : undefined}
+          title={node.type === 'connection' ? '点击展开/收起，双击关闭连接' : undefined}
+        >
+          {hasChildren ? (
+            <span onClick={(e) => handleChevronClick(e, node)} className="shrink-0">
+              {isLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : expanded ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronRight className="h-3 w-3" />
+              )}
+            </span>
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
+          {iconMap[node.type] || <FileType className="h-4 w-4" />}
+          <span className="truncate">{renderLabel(node.label, isMatchableType(node.type))}</span>
+          {renderNodeBadge(node)}
+          {node.type === 'connection' && (
+            <span
+              className={`ml-auto h-2 w-2 rounded-full ${
+                openConnIds.has(node.connID) ? 'bg-green-500' : 'bg-muted-foreground/30'
+              }`}
+            />
+          )}
+        </div>
+      </ObjectTreeContextMenu>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -356,7 +382,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
         </div>
       </div>
 
-      {/* 搜索栏：前端过滤数据库 / 表 / 视图 */}
+      {/* 搜索栏 */}
       <div className="px-2 py-1.5 border-b border-border shrink-0">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
@@ -379,17 +405,30 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="py-1">
-          {treeData.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-4">
-              {isSearching ? '无匹配结果' : '暂无连接'}
-            </div>
-          ) : (
-            treeData.map((node) => renderNode(node))
-          )}
-        </div>
-      </ScrollArea>
+      <div ref={parentRef} className="flex-1 overflow-auto" onScroll={handleScroll}>
+        {visibleItems.length === 0 ? (
+          <div className="text-xs text-muted-foreground text-center py-4">
+            {isSearching ? '无匹配结果' : '暂无连接'}
+          </div>
+        ) : (
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+            {virtualItems.map((virtualItem) => (
+              <div
+                key={virtualItem.key}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                {renderRow(virtualItem.index, { height: `${virtualItem.size}px` })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

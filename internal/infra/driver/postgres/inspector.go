@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"cyancat/internal/infra/driver"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // inspector 基于 pg_catalog 的元数据查询器
@@ -70,8 +71,8 @@ func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.
 	return result, rows.Err()
 }
 
-// ListTables 列出指定 schema 下的基表
-func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]driver.Table, error) {
+// ListTables 列出指定 schema 下的基表（支持分页）
+func (i *inspector) ListTables(ctx context.Context, database, schema string, limit, offset int) ([]driver.Table, error) {
 	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
@@ -82,14 +83,15 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 		schema = "public"
 	}
 
-	const q = `SELECT c.relname, c.relkind, COALESCE(d.description, ''), 0
+	const base = `SELECT c.relname, c.relkind, COALESCE(d.description, ''), 0
 		FROM pg_catalog.pg_class c
 		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
 		WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
 			AND c.relkind IN ('r', 'p')
 		ORDER BY c.relname`
+	q, args := paginateQueryPG(base, 1, []any{schema}, limit, offset)
 
-	rows, err := pool.Query(ctx, q, schema)
+	rows, err := pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: list tables: %w", err)
 	}
@@ -115,8 +117,8 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 	return result, rows.Err()
 }
 
-// ListViews 列出指定 schema 下的视图
-func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]driver.View, error) {
+// ListViews 列出指定 schema 下的视图（支持分页）
+func (i *inspector) ListViews(ctx context.Context, database, schema string, limit, offset int) ([]driver.View, error) {
 	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
@@ -127,13 +129,14 @@ func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]d
 		schema = "public"
 	}
 
-	const q = `SELECT c.relname, pg_get_viewdef(c.oid)
+	const base = `SELECT c.relname, pg_get_viewdef(c.oid)
 		FROM pg_catalog.pg_class c
 		WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
 			AND c.relkind = 'v'
 		ORDER BY c.relname`
+	q, args := paginateQueryPG(base, 1, []any{schema}, limit, offset)
 
-	rows, err := pool.Query(ctx, q, schema)
+	rows, err := pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pg/inspector: list views: %w", err)
 	}
@@ -148,6 +151,103 @@ func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]d
 		result = append(result, v)
 	}
 	return result, rows.Err()
+}
+
+// SearchTables 按关键字搜索表和视图（先前缀匹配，不足时补充模糊匹配）
+func (i *inspector) SearchTables(ctx context.Context, database, schema, keyword string, limit int) ([]driver.Table, error) {
+	pool, closePool, err := i.conn.poolForDatabase(ctx, database)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: target database: %w", err)
+	}
+	defer closePool()
+
+	if schema == "" {
+		schema = "public"
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+
+	prefixRows, err := i.searchRelations(ctx, pool, schema, keyword+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(prefixRows) >= limit {
+		return prefixRows[:limit], nil
+	}
+
+	seen := make(map[string]bool, len(prefixRows))
+	for _, t := range prefixRows {
+		seen[t.Name] = true
+	}
+	likeRows, err := i.searchRelations(ctx, pool, schema, "%"+keyword+"%", limit)
+	if err != nil {
+		return prefixRows, nil
+	}
+	for _, t := range likeRows {
+		if seen[t.Name] {
+			continue
+		}
+		prefixRows = append(prefixRows, t)
+		if len(prefixRows) >= limit {
+			break
+		}
+	}
+	return prefixRows, nil
+}
+
+func (i *inspector) searchRelations(ctx context.Context, pool *pgxpool.Pool, schema, pattern string, limit int) ([]driver.Table, error) {
+	const q = `SELECT c.relname, c.relkind, COALESCE(d.description, ''), 0
+		FROM pg_catalog.pg_class c
+		LEFT JOIN pg_catalog.pg_description d ON d.objoid = c.oid AND d.objsubid = 0
+		WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
+			AND c.relkind IN ('r', 'p', 'v')
+			AND c.relname ILIKE $2
+		ORDER BY c.relname
+		LIMIT $3`
+
+	rows, err := pool.Query(ctx, q, schema, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pg/inspector: search relations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []driver.Table
+	for rows.Next() {
+		var t driver.Table
+		var kind string
+		if err := rows.Scan(&t.Name, &kind, &t.Comment, &t.RowCount); err != nil {
+			return nil, err
+		}
+		switch kind {
+		case "r":
+			t.Type = "TABLE"
+		case "p":
+			t.Type = "PARTITIONED TABLE"
+		case "v":
+			t.Type = "VIEW"
+		default:
+			t.Type = kind
+		}
+		result = append(result, t)
+	}
+	return result, rows.Err()
+}
+
+// paginateQueryPG 为 PostgreSQL 参数化 SQL 追加 LIMIT/OFFSET
+func paginateQueryPG(base string, paramCount int, args []any, limit, offset int) (string, []any) {
+	if limit <= 0 {
+		return base, args
+	}
+	paramCount++
+	base += fmt.Sprintf(" LIMIT $%d", paramCount)
+	args = append(args, limit)
+	if offset > 0 {
+		paramCount++
+		base += fmt.Sprintf(" OFFSET $%d", paramCount)
+		args = append(args, offset)
+	}
+	return base, args
 }
 
 // DescribeTable 描述表（含字段、索引、外键）

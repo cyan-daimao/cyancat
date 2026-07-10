@@ -212,7 +212,7 @@ func (e *queryExecutor) ListTables(ctx context.Context) ([]driver.Table, error) 
 	if err != nil {
 		return nil, err
 	}
-	return conn.Inspector().ListTables(ctx, database, schema)
+	return conn.Inspector().ListTables(ctx, database, schema, 0, 0)
 }
 
 func (e *queryExecutor) DescribeTable(ctx context.Context, table string) (*driver.TableDetail, error) {

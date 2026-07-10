@@ -1,7 +1,11 @@
 import { create } from 'zustand';
-import type { TableDetailDTO } from '@/lib/api/types';
+import type { TableDetailDTO, TableDTO } from '@/lib/api/types';
 import { schemaApi } from '@/lib/api/schema';
 import { toast } from '@/components/ui/use-toast';
+
+// 每批加载的表/视图数量
+export const DEFAULT_TABLE_PAGE_SIZE = 200;
+export const DEFAULT_SEARCH_LIMIT = 50;
 
 // 树节点
 export interface TreeNode {
@@ -17,6 +21,18 @@ export interface TreeNode {
   tableName?: string;
   columnName?: string;  // 字段节点：字段名（label 含类型后缀，此字段仅名称）
   isPrimary?: boolean;  // 字段节点：是否为主键
+  // 分页状态（仅 database/schema 节点使用）
+  tableOffset?: number;
+  hasMoreTables?: boolean;
+  viewOffset?: number;
+  hasMoreViews?: boolean;
+}
+
+// 搜索结果状态
+interface SearchState {
+  keyword: string;
+  results: TreeNode[];
+  loading: boolean;
 }
 
 interface SchemaState {
@@ -25,12 +41,21 @@ interface SchemaState {
   expandedKeys: Set<string>;
   selectedNode: TreeNode | null;
   selectedTable: TableDetailDTO | null;
+  // 按节点 key 缓存的搜索结果
+  searchMap: Record<string, SearchState>;
 
   // 操作
   setSelectedNode: (node: TreeNode | null) => void;
   loadDatabases: (connID: number) => Promise<void>;
   loadSchemas: (connID: number, database: string) => Promise<void>;
+  /** 加载/刷新指定 schema/database 下的第一批表和视图 */
   loadTables: (connID: number, database: string, schema: string) => Promise<void>;
+  /** 加载更多表 */
+  loadMoreTables: (nodeKey: string) => Promise<void>;
+  /** 加载更多视图 */
+  loadMoreViews: (nodeKey: string) => Promise<void>;
+  /** 按关键字搜索表/视图 */
+  searchTables: (connID: number, database: string, schema: string, keyword: string) => Promise<TreeNode[]>;
   loadTableDetail: (connID: number, database: string, schema: string, table: string) => Promise<void>;
   toggleExpand: (key: string) => void;
   resetTree: (connID: number) => void;
@@ -49,6 +74,7 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
   expandedKeys: new Set(),
   selectedNode: null,
   selectedTable: null,
+  searchMap: {},
 
   setSelectedNode: (node) => set({ selectedNode: node }),
 
@@ -109,8 +135,8 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
     try {
       const targetSchema = schema || database;
       const [tables, views] = await Promise.all([
-        schemaApi.listTables(connID, database, targetSchema),
-        schemaApi.listViews(connID, database, targetSchema).catch(() => [] as any[]),
+        schemaApi.listTables(connID, database, targetSchema, DEFAULT_TABLE_PAGE_SIZE, 0),
+        schemaApi.listViews(connID, database, targetSchema, DEFAULT_TABLE_PAGE_SIZE, 0).catch(() => [] as TableDTO[]),
       ]);
 
       const tableNodes: TreeNode[] = tables.map(t => ({
@@ -133,7 +159,7 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
         database,
         schema: targetSchema,
         tableName: v.name,
-        loaded: true, // views don't have sub-children in V1.0
+        loaded: true,
       }));
 
       const allNodes = [...tableNodes, ...viewNodes];
@@ -147,7 +173,15 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
               n.key === `conn:${connID}:db:${database}:schema:${targetSchema}` ||
               (n.key === `conn:${connID}:db:${database}` && n.children?.every(child => child.type !== 'schema'))
             ) {
-              return { ...n, children: allNodes, loaded: true };
+              return {
+                ...n,
+                children: allNodes,
+                loaded: true,
+                tableOffset: tableNodes.length,
+                hasMoreTables: tables.length >= DEFAULT_TABLE_PAGE_SIZE,
+                viewOffset: viewNodes.length,
+                hasMoreViews: views.length >= DEFAULT_TABLE_PAGE_SIZE,
+              };
             }
             if (n.children) {
               return { ...n, children: updateChildren(n.children) };
@@ -159,6 +193,157 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
       });
     } catch (e: any) {
       toast({ title: '加载表列表失败', description: e.message, variant: 'destructive' });
+    }
+  },
+
+  loadMoreTables: async (nodeKey) => {
+    const node = findNode(get().trees, nodeKey);
+    if (!node || !node.database) return;
+    if (node.hasMoreTables === false) return;
+
+    const connID = node.connID;
+    const database = node.database;
+    const schema = node.schema || database;
+    const offset = node.tableOffset || 0;
+
+    try {
+      const tables = await schemaApi.listTables(connID, database, schema, DEFAULT_TABLE_PAGE_SIZE, offset);
+      const newNodes: TreeNode[] = tables.map(t => ({
+        key: `conn:${connID}:db:${database}:schema:${schema}:table:${t.name}`,
+        label: t.name,
+        type: 'table' as const,
+        connID,
+        database,
+        schema,
+        tableName: t.name,
+        loaded: false,
+        children: [],
+      }));
+
+      set(state => {
+        const trees = { ...state.trees };
+        const updateChildren = (nodes: TreeNode[]): TreeNode[] =>
+          nodes.map(n => {
+            if (n.key === nodeKey) {
+              const existing = n.children || [];
+              // 视图节点放在表节点后面；这里简单追加到末尾
+              return {
+                ...n,
+                children: [...existing, ...newNodes],
+                tableOffset: offset + newNodes.length,
+                hasMoreTables: tables.length >= DEFAULT_TABLE_PAGE_SIZE,
+              };
+            }
+            if (n.children) {
+              return { ...n, children: updateChildren(n.children) };
+            }
+            return n;
+          });
+        trees[connID] = updateChildren(trees[connID] || []);
+        return { trees };
+      });
+    } catch (e: any) {
+      toast({ title: '加载更多表失败', description: e.message, variant: 'destructive' });
+    }
+  },
+
+  loadMoreViews: async (nodeKey) => {
+    const node = findNode(get().trees, nodeKey);
+    if (!node || !node.database) return;
+    if (node.hasMoreViews === false) return;
+
+    const connID = node.connID;
+    const database = node.database;
+    const schema = node.schema || database;
+    const offset = node.viewOffset || 0;
+
+    try {
+      const views = await schemaApi.listViews(connID, database, schema, DEFAULT_TABLE_PAGE_SIZE, offset);
+      const newNodes: TreeNode[] = views.map((v: any) => ({
+        key: `conn:${connID}:db:${database}:schema:${schema}:view:${v.name}`,
+        label: v.name,
+        type: 'view' as const,
+        connID,
+        database,
+        schema,
+        tableName: v.name,
+        loaded: true,
+      }));
+
+      set(state => {
+        const trees = { ...state.trees };
+        const updateChildren = (nodes: TreeNode[]): TreeNode[] =>
+          nodes.map(n => {
+            if (n.key === nodeKey) {
+              const existing = n.children || [];
+              return {
+                ...n,
+                children: [...existing, ...newNodes],
+                viewOffset: offset + newNodes.length,
+                hasMoreViews: views.length >= DEFAULT_TABLE_PAGE_SIZE,
+              };
+            }
+            if (n.children) {
+              return { ...n, children: updateChildren(n.children) };
+            }
+            return n;
+          });
+        trees[connID] = updateChildren(trees[connID] || []);
+        return { trees };
+      });
+    } catch (e: any) {
+      toast({ title: '加载更多视图失败', description: e.message, variant: 'destructive' });
+    }
+  },
+
+  searchTables: async (connID, database, schema, keyword) => {
+    const targetSchema = schema || database;
+    const nodeKey = schema
+      ? `conn:${connID}:db:${database}:schema:${targetSchema}`
+      : `conn:${connID}:db:${database}`;
+    const trimmed = keyword.trim().toLowerCase();
+
+    set(state => ({
+      searchMap: {
+        ...state.searchMap,
+        [nodeKey]: { keyword: trimmed, results: [], loading: true },
+      },
+    }));
+
+    try {
+      const list = await schemaApi.searchTables({
+        connID,
+        database,
+        schema: targetSchema,
+        keyword: trimmed,
+        limit: DEFAULT_SEARCH_LIMIT,
+      });
+      const nodes: TreeNode[] = list.map(t => ({
+        key: `conn:${connID}:db:${database}:schema:${targetSchema}:${t.type === 'VIEW' || t.type === 'view' ? 'view' : 'table'}:${t.name}`,
+        label: t.name,
+        type: (t.type === 'VIEW' || t.type === 'view' ? 'view' : 'table') as 'table' | 'view',
+        connID,
+        database,
+        schema: targetSchema,
+        tableName: t.name,
+        loaded: t.type === 'VIEW' || t.type === 'view',
+      }));
+      set(state => ({
+        searchMap: {
+          ...state.searchMap,
+          [nodeKey]: { keyword: trimmed, results: nodes, loading: false },
+        },
+      }));
+      return nodes;
+    } catch (e: any) {
+      set(state => ({
+        searchMap: {
+          ...state.searchMap,
+          [nodeKey]: { keyword: trimmed, results: [], loading: false },
+        },
+      }));
+      toast({ title: '搜索表失败', description: e.message, variant: 'destructive' });
+      return [];
     }
   },
 
@@ -274,18 +459,14 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
   }),
 
   invalidateDatabase: async (connID, db) => {
-    // 重新加载该数据库下的表和视图
-    // MySQL 的 schema 默认与 database 同名
     await get().loadTables(connID, db, db);
   },
 
   invalidateTable: async (connID, db, schema, table) => {
-    // 重新加载表详情
     await get().loadTableDetail(connID, db, schema, table);
   },
 
   refreshTree: async (connID) => {
-    // 刷新指定连接的整个树
     get().resetTree(connID);
     await get().loadDatabases(connID);
   },
@@ -294,3 +475,22 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
     return node.connID;
   },
 }));
+
+// 在树中查找指定 key 的节点
+function findNode(trees: Record<number, TreeNode[]>, key: string): TreeNode | null {
+  for (const connID of Object.keys(trees).map(Number)) {
+    const found = findInNodes(trees[connID], key);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findInNodes(nodes: TreeNode[] | undefined, key: string): TreeNode | null {
+  if (!nodes) return null;
+  for (const n of nodes) {
+    if (n.key === key) return n;
+    const found = findInNodes(n.children, key);
+    if (found) return found;
+  }
+  return null;
+}

@@ -18,6 +18,8 @@ type SqlCompleteRequest struct {
 	CursorLine int `json:"cursorLine"`
 	// CursorColumn 光标列号（1-based）
 	CursorColumn int `json:"cursorColumn"`
+	// Prefix 当前光标处已输入的标识符前缀（用于表名搜索）
+	Prefix string `json:"prefix"`
 }
 
 // SqlCompleteCandidate 单个补全候选
@@ -47,6 +49,7 @@ func ToCompleteQuery(req *SqlCompleteRequest) *sqlcompleteservice.CompleteQuery 
 		SQL:            req.SQL,
 		CursorLine:     req.CursorLine,
 		CursorColumn:   req.CursorColumn,
+		Prefix:         req.Prefix,
 	}
 }
 

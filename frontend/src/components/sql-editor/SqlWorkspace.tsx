@@ -70,10 +70,12 @@ const SqlWorkspace: React.FC = () => {
   }, [selectedNode, connections]);
 
   React.useEffect(() => {
-    if (selectedContext) {
+    // 仅当当前标签页尚未绑定数据源时，才跟随对象树选择自动绑定。
+    // 一旦标签页已有数据源，切换对象树不应改变该标签的上下文。
+    if (selectedContext && activeTab?.connID === 0) {
       updateActiveTabContext(selectedContext);
     }
-  }, [selectedContext, updateActiveTabContext]);
+  }, [selectedContext, activeTab?.connID, updateActiveTabContext]);
 
   // 拖拽分割线状态
   const [editorHeight, setEditorHeight] = React.useState(DEFAULT_EDITOR_HEIGHT);

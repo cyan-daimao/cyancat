@@ -70,7 +70,7 @@ func (s *SchemaServiceImpl) ListTables(query *ListTablesQuery) ([]*TableBO, erro
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	list, err := conn.Inspector().ListTables(ctx, query.Database, query.Schema)
+	list, err := conn.Inspector().ListTables(ctx, query.Database, query.Schema, query.Limit, query.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +89,30 @@ func (s *SchemaServiceImpl) ListViews(query *ListTablesQuery) ([]*ViewBO, error)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	list, err := conn.Inspector().ListViews(ctx, query.Database, query.Schema)
+	list, err := conn.Inspector().ListViews(ctx, query.Database, query.Schema, query.Limit, query.Offset)
 	if err != nil {
 		return nil, err
 	}
 	return ToViewBOs(list), nil
+}
+
+// SearchTables 按关键字搜索表和视图
+func (s *SchemaServiceImpl) SearchTables(query *SearchTablesQuery) ([]*TableBO, error) {
+	if query == nil || query.ConnID <= 0 {
+		return nil, errors.New("schemaservice: connID is required")
+	}
+	conn, err := s.sessionMgr.Get(query.ConnID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	list, err := conn.Inspector().SearchTables(ctx, query.Database, query.Schema, query.Keyword, query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return ToTableBOs(list), nil
 }
 
 // DescribeTable 描述表

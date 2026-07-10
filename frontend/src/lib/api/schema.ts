@@ -1,5 +1,5 @@
 import {
-  ListDatabases, ListSchemas, ListTables, ListViews, DescribeTable,
+  ListDatabases, ListSchemas, ListTables, ListViews, SearchTables, DescribeTable,
   ListCharsets, ListCollations, GetCreateTableDDL, PreviewCreateTable,
   PreviewAlterTable, CreateDatabase, CreateTable, AlterTable,
   PreviewDropDatabase, DropDatabase, PreviewDropTable, DropTable,
@@ -7,7 +7,7 @@ import {
 import type {
   ApiResponse, DatabaseDTO, SchemaDTO, TableDTO, ViewDTO, TableDetailDTO,
   CharsetDTO, CollationDTO, CreateTableRequest, AlterTableRequest, CreateDatabaseRequest,
-  DropDatabaseRequest, DropTableRequest,
+  DropDatabaseRequest, DropTableRequest, SearchTablesRequest,
 } from './types';
 
 function checkCode<T>(resp: ApiResponse<T>): T {
@@ -24,11 +24,14 @@ export const schemaApi = {
   listSchemas: (connID: number, database: string) =>
     ListSchemas(connID, database).then(r => checkCode(r as unknown as ApiResponse<SchemaDTO[]>)),
 
-  listTables: (connID: number, database: string, schema: string) =>
-    ListTables(connID, database, schema).then(r => checkCode(r as unknown as ApiResponse<TableDTO[]>)),
+  listTables: (connID: number, database: string, schema: string, limit: number, offset: number) =>
+    ListTables(connID, database, schema, limit, offset).then(r => checkCode(r as unknown as ApiResponse<TableDTO[]>)),
 
-  listViews: (connID: number, database: string, schema: string) =>
-    ListViews(connID, database, schema).then(r => checkCode(r as unknown as ApiResponse<ViewDTO[]>)),
+  listViews: (connID: number, database: string, schema: string, limit: number, offset: number) =>
+    ListViews(connID, database, schema, limit, offset).then(r => checkCode(r as unknown as ApiResponse<ViewDTO[]>)),
+
+  searchTables: (req: SearchTablesRequest) =>
+    SearchTables(req as any).then(r => checkCode(r as unknown as ApiResponse<TableDTO[]>)),
 
   describeTable: (connID: number, database: string, schema: string, table: string) =>
     DescribeTable(connID, database, schema, table).then(r => checkCode(r as unknown as ApiResponse<TableDetailDTO>)),

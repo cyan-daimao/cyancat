@@ -164,10 +164,12 @@ type Inspector interface {
 	ListDatabases(ctx context.Context) ([]Database, error)
 	// ListSchemas 列出指定数据库下的 schema（MySQL 概念为 database 同名）
 	ListSchemas(ctx context.Context, database string) ([]Schema, error)
-	// ListTables 列出指定 schema 下的表
-	ListTables(ctx context.Context, database, schema string) ([]Table, error)
-	// ListViews 列出指定 schema 下的视图
-	ListViews(ctx context.Context, database, schema string) ([]View, error)
+	// ListTables 列出指定 schema 下的表，支持分页（limit <= 0 表示不限制）
+	ListTables(ctx context.Context, database, schema string, limit, offset int) ([]Table, error)
+	// ListViews 列出指定 schema 下的视图，支持分页（limit <= 0 表示不限制）
+	ListViews(ctx context.Context, database, schema string, limit, offset int) ([]View, error)
+	// SearchTables 按关键字搜索表和视图，返回按名称排序的前 limit 条（limit <= 0 表示不限制）
+	SearchTables(ctx context.Context, database, schema, keyword string, limit int) ([]Table, error)
 	// DescribeTable 描述表结构（含字段、索引、外键）
 	DescribeTable(ctx context.Context, database, schema, table string) (*TableDetail, error)
 	// ListIndexes 列出表的索引

@@ -64,7 +64,7 @@ func TestSQLiteDriverMetadataAndDDL(t *testing.T) {
 		t.Fatalf("expected single main schema, got %#v", schemas)
 	}
 
-	tables, err := conn.Inspector().ListTables(ctx, "main", "main")
+	tables, err := conn.Inspector().ListTables(ctx, "main", "main", 0, 0)
 	if err != nil {
 		t.Fatalf("list tables: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSQLiteDriverMetadataAndDDL(t *testing.T) {
 		t.Fatalf("expected user tables without sqlite internals, got %#v", tables)
 	}
 
-	views, err := conn.Inspector().ListViews(ctx, "main", "main")
+	views, err := conn.Inspector().ListViews(ctx, "main", "main", 0, 0)
 	if err != nil {
 		t.Fatalf("list views: %v", err)
 	}

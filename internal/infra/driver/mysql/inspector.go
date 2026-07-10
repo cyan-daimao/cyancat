@@ -53,13 +53,14 @@ func (i *inspector) ListSchemas(ctx context.Context, database string) ([]driver.
 	return []driver.Schema{{Name: database}}, nil
 }
 
-// ListTables 列出指定数据库下的表
-func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]driver.Table, error) {
+// ListTables 列出指定数据库下的表（支持分页）
+func (i *inspector) ListTables(ctx context.Context, database, schema string, limit, offset int) ([]driver.Table, error) {
 	target := pickSchema(database, schema)
-	const q = `SELECT TABLE_NAME, TABLE_TYPE, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
+	const base = `SELECT TABLE_NAME, TABLE_TYPE, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
 		FROM INFORMATION_SCHEMA.TABLES
 		WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
 		ORDER BY TABLE_NAME`
+	q := paginateQuery(base, limit, offset)
 
 	rows, err := i.conn.db.QueryContext(ctx, q, target)
 	if err != nil {
@@ -78,13 +79,14 @@ func (i *inspector) ListTables(ctx context.Context, database, schema string) ([]
 	return result, rows.Err()
 }
 
-// ListViews 列出视图
-func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]driver.View, error) {
+// ListViews 列出视图（支持分页）
+func (i *inspector) ListViews(ctx context.Context, database, schema string, limit, offset int) ([]driver.View, error) {
 	target := pickSchema(database, schema)
-	const q = `SELECT TABLE_NAME, IFNULL(VIEW_DEFINITION, '')
+	const base = `SELECT TABLE_NAME, IFNULL(VIEW_DEFINITION, '')
 		FROM INFORMATION_SCHEMA.VIEWS
 		WHERE TABLE_SCHEMA = ?
 		ORDER BY TABLE_NAME`
+	q := paginateQuery(base, limit, offset)
 
 	rows, err := i.conn.db.QueryContext(ctx, q, target)
 	if err != nil {
@@ -101,6 +103,78 @@ func (i *inspector) ListViews(ctx context.Context, database, schema string) ([]d
 		result = append(result, v)
 	}
 	return result, rows.Err()
+}
+
+// SearchTables 按关键字搜索表和视图（先前缀匹配，不足时补充模糊匹配）
+func (i *inspector) SearchTables(ctx context.Context, database, schema, keyword string, limit int) ([]driver.Table, error) {
+	target := pickSchema(database, schema)
+	if limit <= 0 {
+		limit = 50
+	}
+
+	// 1) 前缀匹配
+	prefixRows, err := i.searchRelations(ctx, target, keyword+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(prefixRows) >= limit {
+		return prefixRows[:limit], nil
+	}
+
+	// 2) 模糊匹配，排除已命中的名称
+	seen := make(map[string]bool, len(prefixRows))
+	for _, t := range prefixRows {
+		seen[t.Name] = true
+	}
+	likeRows, err := i.searchRelations(ctx, target, "%"+keyword+"%", limit)
+	if err != nil {
+		return prefixRows, nil
+	}
+	for _, t := range likeRows {
+		if seen[t.Name] {
+			continue
+		}
+		prefixRows = append(prefixRows, t)
+		if len(prefixRows) >= limit {
+			break
+		}
+	}
+	return prefixRows, nil
+}
+
+func (i *inspector) searchRelations(ctx context.Context, targetSchema, pattern string, limit int) ([]driver.Table, error) {
+	const q = `SELECT TABLE_NAME, TABLE_TYPE, IFNULL(TABLE_COMMENT, ''), IFNULL(TABLE_ROWS, 0)
+		FROM INFORMATION_SCHEMA.TABLES
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE ?
+		ORDER BY TABLE_NAME
+		LIMIT ?`
+
+	rows, err := i.conn.db.QueryContext(ctx, q, targetSchema, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("mysql/inspector: search relations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []driver.Table
+	for rows.Next() {
+		var t driver.Table
+		if err := rows.Scan(&t.Name, &t.Type, &t.Comment, &t.RowCount); err != nil {
+			return nil, err
+		}
+		result = append(result, t)
+	}
+	return result, rows.Err()
+}
+
+// paginateQuery 为 SQL 追加 LIMIT/OFFSET（limit <= 0 时不限制）
+func paginateQuery(base string, limit, offset int) string {
+	if limit > 0 {
+		base += fmt.Sprintf(" LIMIT %d", limit)
+		if offset > 0 {
+			base += fmt.Sprintf(" OFFSET %d", offset)
+		}
+	}
+	return base
 }
 
 // DescribeTable 描述表
