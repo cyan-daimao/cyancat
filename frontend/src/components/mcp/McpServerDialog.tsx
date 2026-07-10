@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useDesignerStore } from '@/stores/designer';
-import { mcpApi } from '@/lib/api/mcp';
+import { mcpApi, McpPortConflictError } from '@/lib/api/mcp';
 import { toast } from '@/components/ui/use-toast';
 import { Bot, Copy, Power, PowerOff, Loader2 } from 'lucide-react';
 import type { McpServerStatusDTO } from '@/lib/api/types';
@@ -53,7 +53,7 @@ const McpServerDialog: React.FC = () => {
     }
   }, [mcpServerDialogOpen, connID, fetchStatus]);
 
-  const handleStart = async () => {
+  const doStart = async (forceNewPort = false): Promise<void> => {
     if (!connID) return;
     setStarting(true);
     try {
@@ -64,15 +64,25 @@ const McpServerDialog: React.FC = () => {
         allowUpdate,
         allowDelete,
         allowDDL,
+        forceNewPort,
       });
       setStatus(s);
       toast({ title: 'MCP Server 已开启', description: s.address });
     } catch (e: any) {
+      if (e instanceof McpPortConflictError) {
+        const confirmed = window.confirm(e.message);
+        if (confirmed) {
+          return doStart(true);
+        }
+        return;
+      }
       toast({ title: '开启 MCP Server 失败', description: e.message, variant: 'destructive' });
     } finally {
       setStarting(false);
     }
   };
+
+  const handleStart = () => doStart(false);
 
   const handleStop = async () => {
     if (!connID) return;

@@ -4,17 +4,19 @@ package http
 import (
 	"cyancat/internal/adapter/dto"
 	"cyancat/internal/application/connectionservice"
+	"cyancat/internal/application/sqlcompleteservice"
 	"cyancat/internal/infra/api"
 )
 
 // ConnectionAPI 连接管理 API（通过 Wails Bindings 暴露给前端）
 type ConnectionAPI struct {
-	svc connectionservice.ConnectionService
+	svc            connectionservice.ConnectionService
+	sqlCompleteSvc sqlcompleteservice.Service
 }
 
 // NewConnectionAPI 创建 ConnectionAPI
-func NewConnectionAPI(svc connectionservice.ConnectionService) *ConnectionAPI {
-	return &ConnectionAPI{svc: svc}
+func NewConnectionAPI(svc connectionservice.ConnectionService, sqlCompleteSvc sqlcompleteservice.Service) *ConnectionAPI {
+	return &ConnectionAPI{svc: svc, sqlCompleteSvc: sqlCompleteSvc}
 }
 
 // List 列出连接
@@ -121,6 +123,9 @@ func (a *ConnectionAPI) Open(id int64) *api.Response[*dto.ConnectionDTO] {
 	bo, err := a.svc.Open(id)
 	if err != nil {
 		return api.Fail[*dto.ConnectionDTO](api.ErrorCode, nil, err.Error())
+	}
+	if a.sqlCompleteSvc != nil {
+		a.sqlCompleteSvc.PrefetchConnectionCache(bo.ID, string(bo.Type), bo.Database)
 	}
 	return api.Success(dto.ToConnectionDTO(bo))
 }

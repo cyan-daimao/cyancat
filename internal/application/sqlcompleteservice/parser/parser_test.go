@@ -82,3 +82,59 @@ func TestPostgresParseMemberAccess(t *testing.T) {
 		t.Errorf("expected prefix a, got %s", res.TablePrefix)
 	}
 }
+
+func TestMySQLMultiStatementSameAlias(t *testing.T) {
+	p := NewMySQL()
+	sql := `SELECT * FROM cdc_spark_job AS t WHERE t.cdc_config_id LIMIT 500;
+SELECT * FROM metadata_index AS t WHERE t.`
+	res, err := p.Parse(sql, 2, 45)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if !res.IsMemberAccess {
+		t.Fatalf("expected member access")
+	}
+	if res.TablePrefix != "t" {
+		t.Errorf("expected prefix t, got %s", res.TablePrefix)
+	}
+	found := false
+	for _, table := range res.Tables {
+		if table.Name == "metadata_index" && table.Alias == "t" {
+			found = true
+		}
+		if table.Name == "cdc_spark_job" {
+			t.Errorf("should not include table from previous statement, got %+v", table)
+		}
+	}
+	if !found {
+		t.Errorf("metadata_index not found in tables: %+v", res.Tables)
+	}
+}
+
+func TestPostgresMultiStatementSameAlias(t *testing.T) {
+	p := NewPostgres()
+	sql := `SELECT * FROM cdc_spark_job AS t WHERE t.cdc_config_id LIMIT 500;
+SELECT * FROM metadata_index AS t WHERE t.`
+	res, err := p.Parse(sql, 2, 45)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if !res.IsMemberAccess {
+		t.Fatalf("expected member access")
+	}
+	if res.TablePrefix != "t" {
+		t.Errorf("expected prefix t, got %s", res.TablePrefix)
+	}
+	found := false
+	for _, table := range res.Tables {
+		if table.Name == "metadata_index" && table.Alias == "t" {
+			found = true
+		}
+		if table.Name == "cdc_spark_job" {
+			t.Errorf("should not include table from previous statement, got %+v", table)
+		}
+	}
+	if !found {
+		t.Errorf("metadata_index not found in tables: %+v", res.Tables)
+	}
+}

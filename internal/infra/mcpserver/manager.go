@@ -21,6 +21,8 @@ type ServerConfig struct {
 	AllowDDL bool
 	// Token 访问令牌
 	Token string
+	// Port 指定监听端口，0 表示随机端口
+	Port int
 	// Executor SQL 执行器
 	Executor SQLExecutor
 }
@@ -92,6 +94,7 @@ func (m *managerImpl) Start(connID int64, cfg ServerConfig) (*ServerInfo, error)
 	if err != nil {
 		return nil, err
 	}
+	srv.desiredPort = cfg.Port
 
 	address, err := srv.Start()
 	if err != nil {

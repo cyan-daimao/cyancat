@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 
 	"cyancat/internal/infra/driver"
 
@@ -28,16 +29,20 @@ type SQLExecutor interface {
 
 // Server 单个 MCP Server 包装器
 type Server struct {
-	connID     int64
-	token      string
-	allow      map[string]bool
-	executor   SQLExecutor
-	mcpServer  *mcpsrv.MCPServer
-	sseServer  *mcpsrv.SSEServer
-	httpServer *http.Server
-	listener   net.Listener
-	address    string
+	connID      int64
+	token       string
+	allow       map[string]bool
+	executor    SQLExecutor
+	mcpServer   *mcpsrv.MCPServer
+	sseServer   *mcpsrv.SSEServer
+	httpServer  *http.Server
+	listener    net.Listener
+	address     string
+	desiredPort int
 }
+
+// ErrPortConflict 指定端口被占用
+var ErrPortConflict = errors.New("mcpserver: port conflict")
 
 // NewServer 创建并配置 MCP Server
 func NewServer(connID int64, token string, allow map[string]bool, executor SQLExecutor) (*Server, error) {
@@ -111,8 +116,16 @@ func (s *Server) registerTools(mcpServer *mcpsrv.MCPServer) {
 
 // Start 启动 MCP Server，返回访问地址
 func (s *Server) Start() (string, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	addr := "127.0.0.1:0"
+	if s.desiredPort > 0 {
+		addr = fmt.Sprintf("127.0.0.1:%d", s.desiredPort)
+	}
+
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
+		if s.desiredPort > 0 && errors.Is(err, syscall.EADDRINUSE) {
+			return "", fmt.Errorf("%w: port %d: %w", ErrPortConflict, s.desiredPort, err)
+		}
 		return "", fmt.Errorf("mcpserver: listen failed: %w", err)
 	}
 	s.listener = listener

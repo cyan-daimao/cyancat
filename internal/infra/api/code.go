@@ -13,6 +13,8 @@ const (
 	NotFoundCode Code = 404
 	// AuthErrorCode 认证失败
 	AuthErrorCode Code = 401
+	// ConflictCode 资源冲突
+	ConflictCode Code = 409
 	// ErrorCode 内部错误
 	ErrorCode Code = 500
 )
@@ -28,6 +30,8 @@ func (c Code) String() string {
 		return "not found"
 	case AuthErrorCode:
 		return "authentication error"
+	case ConflictCode:
+		return "conflict"
 	case ErrorCode:
 		return "internal error"
 	default:

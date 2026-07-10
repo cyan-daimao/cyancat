@@ -37,17 +37,16 @@ func (p *Postgres) Parse(sql string, cursorLine, cursorColumn int) (*ParseResult
 	// 2. 使用 pg_query_go 解析
 	parsed, err := pg_query.Parse(sql)
 	if err == nil && parsed != nil && len(parsed.Stmts) > 0 {
-		for _, raw := range parsed.Stmts {
-			if raw == nil || raw.Stmt == nil {
-				continue
-			}
+		// 只提取光标所在语句的表，避免多语句相同 alias 串表
+		if raw := findPostgresStmtAtCursor(parsed.Stmts, offset); raw != nil && raw.Stmt != nil {
 			extractPostgresNode(raw.Stmt, res)
 		}
 	}
 
 	// 3. fallback
 	if len(res.Tables) == 0 {
-		fallbackExtractTables(prefix, res)
+		start, _ := statementBounds(sql, offset)
+		fallbackExtractTables(prefix[start:], res)
 	}
 
 	// 4. 推断上下文
@@ -85,6 +84,27 @@ func extractPostgresJoin(join *pg_query.JoinExpr, res *ParseResult) {
 	}
 	extractPostgresNode(join.Larg, res)
 	extractPostgresNode(join.Rarg, res)
+}
+
+// findPostgresStmtAtCursor 根据 StmtLocation/StmtLen 找到包含光标偏移的语句。
+func findPostgresStmtAtCursor(stmts []*pg_query.RawStmt, offset int) *pg_query.RawStmt {
+	for _, raw := range stmts {
+		if raw == nil {
+			continue
+		}
+		start := int(raw.StmtLocation)
+		end := start + int(raw.StmtLen)
+		if offset >= start && offset <= end {
+			return raw
+		}
+	}
+	// 兜底：返回最后一条语句
+	for i := len(stmts) - 1; i >= 0; i-- {
+		if stmts[i] != nil {
+			return stmts[i]
+		}
+	}
+	return nil
 }
 
 func extractPostgresSelectStmt(stmt *pg_query.SelectStmt, res *ParseResult) {

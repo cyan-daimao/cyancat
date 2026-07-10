@@ -18,13 +18,28 @@ type ServiceImpl struct {
 
 	// columnCache 字段缓存：key = connID:database:schema:table
 	columnCache map[string]columnCacheEntry
+	// tableCache 表名缓存：key = connID:database:schema:keyword
+	// keyword 为空字符串表示“前 N 个兜底表/视图”，不同数据源/schema 自然隔离
+	tableCache map[string]tableCacheEntry
+	// schemaCache 模式缓存：key = connID:database
+	schemaCache map[string]schemaCacheEntry
 	cacheMu     sync.RWMutex
 	cacheMaxAge time.Duration
 }
 
 type columnCacheEntry struct {
-	columns   []schemaservice.ColumnBO
-	cachedAt  time.Time
+	columns  []schemaservice.ColumnBO
+	cachedAt time.Time
+}
+
+type tableCacheEntry struct {
+	tables   []*schemaservice.TableBO
+	cachedAt time.Time
+}
+
+type schemaCacheEntry struct {
+	schemas  []string
+	cachedAt time.Time
 }
 
 // NewServiceImpl 创建补全服务。
@@ -33,6 +48,8 @@ func NewServiceImpl(schemaSvc schemaservice.SchemaService) *ServiceImpl {
 		schemaSvc:   schemaSvc,
 		parsers:     make(map[string]parser.Parser),
 		columnCache: make(map[string]columnCacheEntry),
+		tableCache:  make(map[string]tableCacheEntry),
+		schemaCache: make(map[string]schemaCacheEntry),
 		cacheMaxAge: 5 * time.Minute,
 	}
 	go svc.cacheCleaner()
@@ -71,6 +88,14 @@ func (s *ServiceImpl) Complete(query *CompleteQuery) (*CompleteResult, error) {
 
 	switch parseRes.Context {
 	case parser.CtxColumn:
+		// PostgreSQL 中 schema. 应优先提示该 schema 下的表，而不是字段
+		if isPostgresLike(query.ConnectionType) && parseRes.IsMemberAccess && parseRes.TablePrefix != "" {
+			schemaCandidates := s.completeSchemaTable(ctx, query, parseRes.TablePrefix, "")
+			if len(schemaCandidates) > 0 {
+				candidates = schemaCandidates
+				break
+			}
+		}
 		candidates = s.completeColumn(ctx, query, parseRes)
 	case parser.CtxTable:
 		candidates = s.completeTable(ctx, query)
@@ -140,7 +165,91 @@ func (s *ServiceImpl) completeTable(ctx context.Context, query *CompleteQuery) [
 	// 表名补全：按当前输入前缀搜索；无前缀时返回前 50 个表/视图作为兜底
 	prefix := strings.TrimSpace(query.Prefix)
 
+	// PostgreSQL 支持 schema.table 和 schema 名提示
+	if isPostgresLike(query.ConnectionType) {
+		if dotIdx := strings.Index(prefix, "."); dotIdx >= 0 {
+			schemaPart := strings.TrimSpace(prefix[:dotIdx])
+			tablePart := strings.TrimSpace(prefix[dotIdx+1:])
+			schemaCandidates := s.completeSchemaTable(ctx, query, schemaPart, tablePart)
+			if len(schemaCandidates) > 0 {
+				return schemaCandidates
+			}
+		}
+
+		if prefix == "" {
+			// 在数据库层（未指定 schema）时，空前缀优先提示 schema 列表
+			if query.Schema == "" {
+				return s.schemaCandidates(ctx, query, "", 100)
+			}
+			// 在 schema 层时保持原行为：提示该 schema 下的表
+			return s.completeTableRaw(ctx, query, prefix)
+		}
+
+		// 非空前缀：同时提示匹配的 schema 和表
+		candidates := s.schemaCandidates(ctx, query, prefix, 50)
+		candidates = append(candidates, s.completeTableRaw(ctx, query, prefix)...)
+		return candidates
+	}
+
+	return s.completeTableRaw(ctx, query, prefix)
+}
+
+// schemaCandidates 返回当前数据库下的 schema 候选（PostgreSQL 专用）。
+// prefix 为空时返回前 limit 个 schema；非空时按模糊匹配过滤。
+func (s *ServiceImpl) schemaCandidates(ctx context.Context, query *CompleteQuery, prefix string, limit int) []CompleteCandidate {
+	if query.Database == "" {
+		return nil
+	}
+	schemas, err := s.getSchemas(ctx, query)
+	if err != nil {
+		return nil
+	}
+	lowerPrefix := strings.ToLower(prefix)
 	candidates := make([]CompleteCandidate, 0)
+	idx := 0
+	for _, sc := range schemas {
+		if prefix != "" && !strings.Contains(strings.ToLower(sc), lowerPrefix) {
+			continue
+		}
+		candidates = append(candidates, CompleteCandidate{
+			Label:      sc,
+			Kind:       KindSchema,
+			Detail:     "schema",
+			InsertText: s.quoteIdentifier(sc, query.ConnectionType),
+			SortText:   fmt.Sprintf("0_%04d_%s", idx, sc),
+		})
+		idx++
+		if prefix == "" && idx >= limit {
+			break
+		}
+	}
+	return candidates
+}
+
+// completeTableRaw 执行实际的表/视图搜索并缓存，不附加 schema 候选。
+func (s *ServiceImpl) completeTableRaw(ctx context.Context, query *CompleteQuery, prefix string) []CompleteCandidate {
+	candidates := make([]CompleteCandidate, 0)
+
+	cacheKey := s.tableCacheKey(query, prefix)
+	s.cacheMu.RLock()
+	entry, ok := s.tableCache[cacheKey]
+	s.cacheMu.RUnlock()
+	if ok && time.Since(entry.cachedAt) < s.cacheMaxAge {
+		return s.tablesToCandidates(entry.tables, query.ConnectionType)
+	}
+
+	// PostgreSQL 非空前缀时，优先从当前 schema 的全量缓存中模糊过滤，避免被 SearchTables LIMIT 截断
+	if isPostgresLike(query.ConnectionType) && prefix != "" {
+		emptyKey := fmt.Sprintf("%d:%s:%s:", query.ConnID, query.Database, query.Schema)
+		s.cacheMu.RLock()
+		entry, ok = s.tableCache[emptyKey]
+		s.cacheMu.RUnlock()
+		if ok && time.Since(entry.cachedAt) < s.cacheMaxAge {
+			filtered := fuzzyFilterTables(entry.tables, prefix)
+			return s.tablesToCandidates(filtered, query.ConnectionType)
+		}
+	}
+
 	var list []*schemaservice.TableBO
 	var err error
 
@@ -181,6 +290,18 @@ func (s *ServiceImpl) completeTable(ctx context.Context, query *CompleteQuery) [
 		}
 	}
 
+	s.cacheMu.Lock()
+	s.tableCache[cacheKey] = tableCacheEntry{
+		tables:   list,
+		cachedAt: time.Now(),
+	}
+	s.cacheMu.Unlock()
+
+	return s.tablesToCandidates(list, query.ConnectionType)
+}
+
+func (s *ServiceImpl) tablesToCandidates(list []*schemaservice.TableBO, connectionType string) []CompleteCandidate {
+	candidates := make([]CompleteCandidate, 0, len(list))
 	for i, t := range list {
 		kind := KindTable
 		if strings.EqualFold(t.Type, "VIEW") || strings.EqualFold(t.Type, "v") {
@@ -190,11 +311,148 @@ func (s *ServiceImpl) completeTable(ctx context.Context, query *CompleteQuery) [
 			Label:      t.Name,
 			Kind:       kind,
 			Detail:     t.Comment,
-			InsertText: s.quoteIdentifier(t.Name, query.ConnectionType),
+			InsertText: s.quoteIdentifier(t.Name, connectionType),
 			SortText:   fmt.Sprintf("1_%04d_%s", i, t.Name),
 		})
 	}
 	return candidates
+}
+
+func (s *ServiceImpl) tableCacheKey(query *CompleteQuery, prefix string) string {
+	return fmt.Sprintf("%d:%s:%s:%s", query.ConnID, query.Database, query.Schema, strings.ToLower(prefix))
+}
+
+func isPostgresLike(connectionType string) bool {
+	t := strings.ToLower(connectionType)
+	return t == "postgres" || t == "postgresql"
+}
+
+// completeSchemaTable 提示指定 schema 下的表（PostgreSQL 专用）。
+// schemaPrefix 为 schema 名，tablePrefix 为可选的表名前缀（模糊搜索用）。
+func (s *ServiceImpl) completeSchemaTable(ctx context.Context, query *CompleteQuery, schemaPrefix, tablePrefix string) []CompleteCandidate {
+	schemaPrefix = strings.TrimSpace(schemaPrefix)
+	tablePrefix = strings.TrimSpace(tablePrefix)
+	if schemaPrefix == "" {
+		return nil
+	}
+
+	// 先确认该 prefix 确实是一个存在的 schema
+	schemas, err := s.getSchemas(ctx, query)
+	if err != nil {
+		return nil
+	}
+	found := false
+	for _, sc := range schemas {
+		if strings.EqualFold(sc, schemaPrefix) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil
+	}
+
+	// 优先从缓存中全量模糊过滤，避免被 SearchTables 的 LIMIT 截断
+	cacheKey := fmt.Sprintf("%d:%s:%s:", query.ConnID, query.Database, schemaPrefix)
+	s.cacheMu.RLock()
+	entry, ok := s.tableCache[cacheKey]
+	s.cacheMu.RUnlock()
+	if ok && time.Since(entry.cachedAt) < s.cacheMaxAge {
+		filtered := fuzzyFilterTables(entry.tables, tablePrefix)
+		return s.tablesToCandidates(filtered, query.ConnectionType)
+	}
+
+	// 缓存未命中则回退到数据库搜索，并后台填充缓存
+	go s.prefetchSchemaTables(query.ConnID, query.Database, schemaPrefix)
+
+	q := *query
+	q.Schema = schemaPrefix
+	q.Prefix = tablePrefix
+	return s.completeTableRaw(ctx, &q, tablePrefix)
+}
+
+// fuzzyFilterTables 按表名模糊匹配（大小写不敏感子串）。
+func fuzzyFilterTables(tables []*schemaservice.TableBO, keyword string) []*schemaservice.TableBO {
+	if keyword == "" {
+		return tables
+	}
+	lower := strings.ToLower(keyword)
+	result := make([]*schemaservice.TableBO, 0)
+	for _, t := range tables {
+		if strings.Contains(strings.ToLower(t.Name), lower) {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// prefetchSchemaTables 后台加载指定 schema 的全部表/视图并缓存。
+func (s *ServiceImpl) prefetchSchemaTables(connID int64, database, schema string) {
+	if connID <= 0 || database == "" || schema == "" {
+		return
+	}
+	tables, err := s.schemaSvc.ListTables(&schemaservice.ListTablesQuery{
+		ConnID:   connID,
+		Database: database,
+		Schema:   schema,
+		Limit:    0,
+		Offset:   0,
+	})
+	if err != nil {
+		return
+	}
+	views, _ := s.schemaSvc.ListViews(
+		&schemaservice.ListTablesQuery{
+			ConnID:   connID,
+			Database: database,
+			Schema:   schema,
+			Limit:    0,
+			Offset:   0,
+		})
+	for _, v := range views {
+		tables = append(tables, &schemaservice.TableBO{Name: v.Name, Type: "VIEW"})
+	}
+	s.cacheMu.Lock()
+	s.tableCache[fmt.Sprintf("%d:%s:%s:", connID, database, schema)] = tableCacheEntry{
+		tables:   tables,
+		cachedAt: time.Now(),
+	}
+	s.cacheMu.Unlock()
+}
+
+func (s *ServiceImpl) getSchemas(ctx context.Context, query *CompleteQuery) ([]string, error) {
+	if query.Database == "" {
+		return nil, fmt.Errorf("database is required")
+	}
+	cacheKey := fmt.Sprintf("%d:%s", query.ConnID, query.Database)
+	s.cacheMu.RLock()
+	entry, ok := s.schemaCache[cacheKey]
+	s.cacheMu.RUnlock()
+	if ok && time.Since(entry.cachedAt) < s.cacheMaxAge {
+		return entry.schemas, nil
+	}
+
+	list, err := s.schemaSvc.ListSchemas(&schemaservice.ListSchemasQuery{
+		ConnID:   query.ConnID,
+		Database: query.Database,
+	})
+	if err != nil {
+		return nil, err
+	}
+	schemas := make([]string, 0, len(list))
+	for _, sc := range list {
+		if sc.Name != "" {
+			schemas = append(schemas, sc.Name)
+		}
+	}
+
+	s.cacheMu.Lock()
+	s.schemaCache[cacheKey] = schemaCacheEntry{
+		schemas:  schemas,
+		cachedAt: time.Now(),
+	}
+	s.cacheMu.Unlock()
+	return schemas, nil
 }
 
 func (s *ServiceImpl) completeKeyword() []CompleteCandidate {
@@ -330,8 +588,91 @@ func (s *ServiceImpl) cacheCleaner() {
 				delete(s.columnCache, k)
 			}
 		}
+		for k, v := range s.tableCache {
+			if now.Sub(v.cachedAt) > s.cacheMaxAge {
+				delete(s.tableCache, k)
+			}
+		}
+		for k, v := range s.schemaCache {
+			if now.Sub(v.cachedAt) > s.cacheMaxAge {
+				delete(s.schemaCache, k)
+			}
+		}
 		s.cacheMu.Unlock()
 	}
+}
+
+// PrefetchConnectionCache 连接打开后后台预缓存当前数据库的模式/表名。
+// 目前主要针对 PostgreSQL，MySQL 保持现状。
+func (s *ServiceImpl) PrefetchConnectionCache(connID int64, connectionType, database string) {
+	if !isPostgresLike(connectionType) {
+		return
+	}
+	if connID <= 0 || database == "" {
+		return
+	}
+	go func() {
+		// 1. 缓存当前数据库的 schema 列表
+		schemas, err := s.schemaSvc.ListSchemas(
+			&schemaservice.ListSchemasQuery{ConnID: connID, Database: database})
+		if err != nil {
+			return
+		}
+
+		schemaNames := make([]string, 0, len(schemas))
+		for _, sc := range schemas {
+			if sc.Name != "" {
+				schemaNames = append(schemaNames, sc.Name)
+			}
+		}
+		s.cacheMu.Lock()
+		s.schemaCache[fmt.Sprintf("%d:%s", connID, database)] = schemaCacheEntry{
+			schemas:  schemaNames,
+			cachedAt: time.Now(),
+		}
+		s.cacheMu.Unlock()
+
+		// 2. 缓存当前数据库每个 schema 下的全部表/视图
+		for _, sc := range schemas {
+			if sc.Name == "" {
+				continue
+			}
+			s.prefetchSchemaTables(connID, database, sc.Name)
+		}
+	}()
+}
+
+// ClearTableCache 清除指定范围的表名缓存。database/schema 为空时按前缀匹配。
+func (s *ServiceImpl) ClearTableCache(connID int64, database, schema string) {
+	prefix := fmt.Sprintf("%d:", connID)
+	if database != "" {
+		prefix = fmt.Sprintf("%d:%s:", connID, database)
+		if schema != "" {
+			prefix = fmt.Sprintf("%d:%s:%s:", connID, database, schema)
+		}
+	}
+	s.cacheMu.Lock()
+	for k := range s.tableCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.tableCache, k)
+		}
+	}
+	s.cacheMu.Unlock()
+}
+
+// ClearSchemaCache 清除指定范围的 schema 缓存。database 为空时按前缀匹配。
+func (s *ServiceImpl) ClearSchemaCache(connID int64, database string) {
+	prefix := fmt.Sprintf("%d:", connID)
+	if database != "" {
+		prefix = fmt.Sprintf("%d:%s:", connID, database)
+	}
+	s.cacheMu.Lock()
+	for k := range s.schemaCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.schemaCache, k)
+		}
+	}
+	s.cacheMu.Unlock()
 }
 
 // ClearConnectionCache 连接关闭时清空该连接的缓存。
@@ -341,6 +682,16 @@ func (s *ServiceImpl) ClearConnectionCache(connID int64) {
 	for k := range s.columnCache {
 		if strings.HasPrefix(k, prefix) {
 			delete(s.columnCache, k)
+		}
+	}
+	for k := range s.tableCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.tableCache, k)
+		}
+	}
+	for k := range s.schemaCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.schemaCache, k)
 		}
 	}
 	s.cacheMu.Unlock()

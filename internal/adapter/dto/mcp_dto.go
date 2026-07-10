@@ -10,6 +10,8 @@ type McpServerStatusDTO struct {
 	Enabled bool `json:"enabled"`
 	// Address 访问地址
 	Address string `json:"address"`
+	// Port 监听端口
+	Port int `json:"port"`
 	// Token 访问令牌
 	Token string `json:"token"`
 	// AllowSelect 允许 SELECT
@@ -38,6 +40,8 @@ type StartMcpServerRequest struct {
 	AllowDelete bool `json:"allowDelete"`
 	// AllowDDL 允许 DDL
 	AllowDDL bool `json:"allowDDL"`
+	// ForceNewPort 是否强制使用新端口（忽略历史端口）
+	ForceNewPort bool `json:"forceNewPort"`
 }
 
 // ToStartMcpServerCmd Request -> Cmd
@@ -46,12 +50,13 @@ func ToStartMcpServerCmd(req *StartMcpServerRequest) *mcpservice.StartMcpServerC
 		return nil
 	}
 	return &mcpservice.StartMcpServerCmd{
-		ConnID:      req.ConnID,
-		AllowSelect: req.AllowSelect,
-		AllowInsert: req.AllowInsert,
-		AllowUpdate: req.AllowUpdate,
-		AllowDelete: req.AllowDelete,
-		AllowDDL:    req.AllowDDL,
+		ConnID:       req.ConnID,
+		AllowSelect:  req.AllowSelect,
+		AllowInsert:  req.AllowInsert,
+		AllowUpdate:  req.AllowUpdate,
+		AllowDelete:  req.AllowDelete,
+		AllowDDL:     req.AllowDDL,
+		ForceNewPort: req.ForceNewPort,
 	}
 }
 
@@ -64,6 +69,7 @@ func ToMcpServerStatusDTO(bo *mcpservice.McpServerStatusBO) *McpServerStatusDTO 
 		ConnID:      bo.ConnID,
 		Enabled:     bo.Enabled,
 		Address:     bo.Address,
+		Port:        bo.Port,
 		Token:       bo.Token,
 		AllowSelect: bo.AllowSelect,
 		AllowInsert: bo.AllowInsert,

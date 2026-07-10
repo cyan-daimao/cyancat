@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -147,6 +148,49 @@ func TestHasWhereClause(t *testing.T) {
 			t.Errorf("hasWhereClause(%q) = %v, want %v", tc.sql, got, tc.expected)
 		}
 	}
+}
+
+func TestServerPortConflict(t *testing.T) {
+	exec := &mockExecutor{}
+	allow := map[string]bool{"select": true}
+
+	srv1, err := NewServer(1, "token1", allow, exec)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	addr1, err := srv1.Start()
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer srv1.Stop(context.Background())
+
+	port := parsePortFromAddress(addr1)
+	if port <= 0 {
+		t.Fatalf("failed to parse port from address: %s", addr1)
+	}
+
+	srv2, err := NewServer(2, "token2", allow, exec)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	srv2.desiredPort = port
+	_, err = srv2.Start()
+	if !errors.Is(err, ErrPortConflict) {
+		t.Fatalf("expected ErrPortConflict, got: %v", err)
+	}
+}
+
+func parsePortFromAddress(addr string) int {
+	if idx := strings.LastIndex(addr, ":"); idx >= 0 {
+		portPart := addr[idx+1:]
+		if slashIdx := strings.Index(portPart, "/"); slashIdx >= 0 {
+			portPart = portPart[:slashIdx]
+		}
+		if port, err := strconv.Atoi(portPart); err == nil {
+			return port
+		}
+	}
+	return 0
 }
 
 func TestHandleExecuteRequiresWhere(t *testing.T) {

@@ -55,10 +55,28 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
   } = useSchemaStore();
   const [loadingKeys, setLoadingKeys] = React.useState<Set<string>>(new Set());
 
-  // 搜索关键字
+  // 搜索关键字：输入框立即响应，但搜索逻辑使用 debounce，避免每个字符都触发整树重算
   const [searchKeyword, setSearchKeyword] = React.useState('');
   const trimmedKeyword = searchKeyword.trim().toLowerCase();
-  const isSearching = trimmedKeyword.length > 0;
+  const [debouncedKeyword, setDebouncedKeyword] = React.useState('');
+  const isSearching = debouncedKeyword.length > 0;
+  const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedKeyword(trimmedKeyword);
+    }, 300);
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+    };
+  }, [trimmedKeyword]);
 
   const setLoading = (key: string, on: boolean) => {
     setLoadingKeys(prev => {
@@ -186,8 +204,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     );
   };
 
-  // 构建连接根节点
-  const buildTree = (): TreeNode[] => {
+  const rawTree = React.useMemo(() => {
     return connections.map((conn) => {
       const existingChildren = trees[conn.id] || [];
       return {
@@ -199,52 +216,64 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
         children: existingChildren,
       };
     });
-  };
+  }, [connections, trees]);
 
-  // 扁平化可见节点
-  const flattenVisible = (nodes: TreeNode[], depth = 0): { node: TreeNode; depth: number }[] => {
-    const out: { node: TreeNode; depth: number }[] = [];
-    for (const node of nodes) {
-      out.push({ node, depth });
-      const expanded = expandedKeys.has(node.key) || (isSearching && node.type === 'connection');
-      if (expanded && node.children) {
-        out.push(...flattenVisible(node.children, depth + 1));
+  // 扁平化可见节点（搜索时强制展开 connection 以显示命中结果）
+  const flatItems = React.useMemo(() => {
+    const flattenVisible = (nodes: TreeNode[], depth = 0): { node: TreeNode; depth: number }[] => {
+      const out: { node: TreeNode; depth: number }[] = [];
+      for (const node of nodes) {
+        out.push({ node, depth });
+        const expanded = expandedKeys.has(node.key) || (isSearching && node.type === 'connection');
+        if (expanded && node.children) {
+          out.push(...flattenVisible(node.children, depth + 1));
+        }
       }
-    }
-    return out;
-  };
+      return out;
+    };
+    return flattenVisible(rawTree);
+  }, [rawTree, expandedKeys, isSearching]);
 
-  const rawTree = buildTree();
-  const flatItems = flattenVisible(rawTree);
-
-  // 搜索触发
+  // 搜索触发：用 ref 保存最新状态，避免 useEffect 依赖数组导致闭包过时
+  const connectionsRef = React.useRef(connections);
+  const rawTreeRef = React.useRef(rawTree);
+  const expandedKeysRef = React.useRef(expandedKeys);
+  const searchTablesRef = React.useRef(searchTables);
+  React.useEffect(() => {
+    connectionsRef.current = connections;
+    rawTreeRef.current = rawTree;
+    expandedKeysRef.current = expandedKeys;
+    searchTablesRef.current = searchTables;
+  });
   React.useEffect(() => {
     if (!isSearching) return;
     const runSearch = async () => {
-      for (const conn of connections) {
-        const connNode = rawTree.find(n => n.connID === conn.id);
+      const conns = connectionsRef.current;
+      const tree = rawTreeRef.current;
+      const expanded = expandedKeysRef.current;
+      const doSearch = searchTablesRef.current;
+      for (const conn of conns) {
+        const connNode = tree.find(n => n.connID === conn.id);
         if (!connNode || !connNode.children) continue;
-        // 对每个已展开的 database/schema 发起搜索
         for (const dbNode of connNode.children) {
-          if (expandedKeys.has(dbNode.key) && dbNode.database) {
-            if (needsSchemaLayer(conn.id)) {
-              for (const schemaNode of dbNode.children || []) {
-                if (expandedKeys.has(schemaNode.key) && schemaNode.schema) {
-                  await searchTables(conn.id, dbNode.database!, schemaNode.schema!, trimmedKeyword);
-                }
+          if (!expanded.has(dbNode.key) || !dbNode.database) continue;
+          if (needsSchemaLayer(conn.id)) {
+            for (const schemaNode of dbNode.children || []) {
+              if (expanded.has(schemaNode.key) && schemaNode.schema) {
+                await doSearch(conn.id, dbNode.database!, schemaNode.schema!, debouncedKeyword);
               }
-            } else {
-              await searchTables(conn.id, dbNode.database!, dbNode.database!, trimmedKeyword);
             }
+          } else {
+            await doSearch(conn.id, dbNode.database!, dbNode.database!, debouncedKeyword);
           }
         }
       }
     };
     runSearch();
-  }, [trimmedKeyword, expandedKeys, connections, rawTree, searchTables]);
+  }, [debouncedKeyword, isSearching]);
 
   // 搜索结果覆盖：把匹配节点替换进 flatItems
-  const getVisibleItems = (): { node: TreeNode; depth: number }[] => {
+  const visibleItems = React.useMemo(() => {
     if (!isSearching) return flatItems;
 
     const out: { node: TreeNode; depth: number }[] = [];
@@ -260,9 +289,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
       }
     }
     return out;
-  };
-
-  const visibleItems = getVisibleItems();
+  }, [flatItems, isSearching, expandedKeys, searchMap]);
 
   // 虚拟滚动
   const parentRef = React.useRef<HTMLDivElement>(null);

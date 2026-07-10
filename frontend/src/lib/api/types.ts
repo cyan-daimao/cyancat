@@ -317,6 +317,7 @@ export interface McpServerStatusDTO {
   connID: number;
   enabled: boolean;
   address: string;
+  port: number;
   token: string;
   allowSelect: boolean;
   allowInsert: boolean;
@@ -332,6 +333,7 @@ export interface StartMcpServerRequest {
   allowUpdate: boolean;
   allowDelete: boolean;
   allowDDL: boolean;
+  forceNewPort?: boolean;
 }
 
 // SqlCompleteRequest SQL 补全请求

@@ -25,9 +25,9 @@ const copySql = async (sql?: string) => {
   }
 };
 
-const MIN_EDITOR_HEIGHT = 80;
+const MIN_EDITOR_HEIGHT = 120;
 const MAX_EDITOR_HEIGHT = 600;
-const DEFAULT_EDITOR_HEIGHT = 200;
+const DEFAULT_EDITOR_HEIGHT = 260;
 
 const SqlWorkspace: React.FC = () => {
   const {

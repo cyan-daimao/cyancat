@@ -73,12 +73,19 @@ function registerSqlCompletionProvider(monaco: any) {
   monaco.languages.registerCompletionItemProvider('sql', {
     triggerCharacters: ['.', ' '],
     provideCompletionItems: async (model: any, position: any) => {
-      const range = completionRange(model, position);
       const ctx = latestHintContext;
       if (!ctx.connID) {
         return { suggestions: [] };
       }
 
+      // 当前行光标前只有空白时（如刚回车换行）不触发补全
+      const lineContent = model.getLineContent(position.lineNumber);
+      const textBeforeCursor = lineContent.substring(0, position.column - 1);
+      if (!textBeforeCursor.trim()) {
+        return { suggestions: [] };
+      }
+
+      const range = completionRange(model, position);
       // 获取当前光标处已输入的标识符前缀，用于后端表名搜索
       const word = model.getWordUntilPosition(position);
       const prefix = word.word || '';
@@ -101,6 +108,8 @@ function registerSqlCompletionProvider(monaco: any) {
           view: monaco.languages.CompletionItemKind.Module,
           column: monaco.languages.CompletionItemKind.Field,
           function: monaco.languages.CompletionItemKind.Function,
+          schema: monaco.languages.CompletionItemKind.Folder,
+          database: monaco.languages.CompletionItemKind.Folder,
         };
 
         return {

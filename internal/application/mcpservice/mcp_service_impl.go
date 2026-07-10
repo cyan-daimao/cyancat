@@ -87,6 +87,12 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 		}
 	}
 
+	// 查询历史端口配置
+	existing, err := s.mcpRepo.GetByConnID(cmd.ConnID)
+	if err != nil {
+		return nil, fmt.Errorf("mcpservice: get existing config failed: %w", err)
+	}
+
 	token, err := generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("mcpservice: generate token failed: %w", err)
@@ -114,7 +120,7 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 		sessionMgr: s.sessionMgr,
 	}
 
-	info, err := s.mcpMgr.Start(cmd.ConnID, mcpserver.ServerConfig{
+	serverCfg := mcpserver.ServerConfig{
 		AllowSelect: cmd.AllowSelect,
 		AllowInsert: cmd.AllowInsert,
 		AllowUpdate: cmd.AllowUpdate,
@@ -122,8 +128,17 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 		AllowDDL:    cmd.AllowDDL,
 		Token:       token,
 		Executor:    executor,
-	})
+	}
+	// 未强制要求新端口时，尝试复用历史端口
+	if !cmd.ForceNewPort && existing != nil && existing.Port > 0 {
+		serverCfg.Port = existing.Port
+	}
+
+	info, err := s.mcpMgr.Start(cmd.ConnID, serverCfg)
 	if err != nil {
+		if errors.Is(err, mcpserver.ErrPortConflict) {
+			return nil, &PortConflictError{Port: existing.Port}
+		}
 		return nil, fmt.Errorf("mcpservice: start mcp server failed: %w", err)
 	}
 
@@ -136,6 +151,15 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 	}
 
 	return bo, nil
+}
+
+// PortConflictError 历史端口被占用错误
+type PortConflictError struct {
+	Port int
+}
+
+func (e *PortConflictError) Error() string {
+	return fmt.Sprintf("历史端口 %d 被占用，是否使用新端口？新端口需要让 agent 重新安装 mcp。", e.Port)
 }
 
 func parsePortFromAddress(addr string) int {

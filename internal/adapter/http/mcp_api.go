@@ -2,6 +2,8 @@
 package http
 
 import (
+	"errors"
+
 	"cyancat/internal/adapter/dto"
 	"cyancat/internal/application/mcpservice"
 	"cyancat/internal/infra/api"
@@ -41,6 +43,14 @@ func (a *McpAPI) Start(req *dto.StartMcpServerRequest) *api.Response[*dto.McpSer
 
 	bo, err := a.svc.Start(dto.ToStartMcpServerCmd(req))
 	if err != nil {
+		var conflict *mcpservice.PortConflictError
+		if errors.As(err, &conflict) {
+			return api.Fail[*dto.McpServerStatusDTO](
+				api.ConflictCode,
+				&dto.McpServerStatusDTO{ConnID: req.ConnID, Port: conflict.Port},
+				conflict.Error(),
+			)
+		}
 		return api.Fail[*dto.McpServerStatusDTO](api.ErrorCode, nil, err.Error())
 	}
 	return api.Success(dto.ToMcpServerStatusDTO(bo))

@@ -37,9 +37,9 @@ func NewApp(
 	sqlCompleteService sqlcompleteservice.Service,
 ) *App {
 	return &App{
-		ConnectionAPI:  http.NewConnectionAPI(connectionService),
+		ConnectionAPI:  http.NewConnectionAPI(connectionService, sqlCompleteService),
 		QueryAPI:       http.NewQueryAPI(queryService),
-		SchemaAPI:      http.NewSchemaAPI(schemaService),
+		SchemaAPI:      http.NewSchemaAPI(schemaService, sqlCompleteService),
 		McpAPI:         http.NewMcpAPI(mcpService),
 		ExportAPI:      http.NewExportAPI(),
 		FileDialogAPI:  http.NewFileDialogAPI(),

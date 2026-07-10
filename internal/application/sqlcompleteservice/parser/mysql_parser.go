@@ -43,14 +43,16 @@ func (m *MySQL) Parse(sql string, cursorLine, cursorColumn int) (*ParseResult, e
 	p := parser.New()
 	stmts, _, err := p.Parse(sql, "", "")
 	if err == nil && len(stmts) > 0 {
-		for _, stmt := range stmts {
+		// 只提取光标所在语句的表，避免多语句相同 alias 串表
+		if stmt := findStmtAtCursor(stmts, sql, offset); stmt != nil {
 			extractTablesFromStmt(stmt, res)
 		}
 	}
 
-	// 3. 如果 parser 失败或没有提取到表，用 fallback 正则提取
+	// 3. 如果 parser 失败或没有提取到表，用 fallback 正则提取（限制在当前语句内）
 	if len(res.Tables) == 0 {
-		fallbackExtractTables(prefix, res)
+		start, _ := statementBounds(sql, offset)
+		fallbackExtractTables(prefix[start:], res)
 	}
 
 	// 4. 如果没有识别为 member access，根据上下文判断
@@ -80,6 +82,14 @@ func detectMemberAccess(prefix string) string {
 // inferContext 根据前缀判断补全上下文。
 func inferContext(prefix string) CompletionContext {
 	upper := strings.ToUpper(strings.TrimSpace(prefix))
+	// 形如 FROM <partial> / JOIN <partial> / ,<partial> 应提示表名/模式名
+	tokens := lastSignificantTokens(prefix, 2)
+	if len(tokens) == 2 {
+		switch tokens[0] {
+		case "FROM", "JOIN", ",":
+			return CtxTable
+		}
+	}
 	lastToken := lastSignificantToken(prefix)
 	// 简单启发式：FROM/JOIN 后提示表名
 	if strings.Contains(upper, "FROM ") || strings.Contains(upper, "JOIN ") {
@@ -96,6 +106,23 @@ func inferContext(prefix string) CompletionContext {
 	return CtxKeyword
 }
 
+// lastSignificantTokens 返回前缀中最后 n 个非空 token（按空格/逗号分割）。
+func lastSignificantTokens(s string, n int) []string {
+	re := regexp.MustCompile(`(?:\s+|,)+`)
+	parts := re.Split(strings.TrimSpace(s), -1)
+	tokens := make([]string, 0, n)
+	for i := len(parts) - 1; i >= 0 && len(tokens) < n; i-- {
+		if parts[i] != "" {
+			tokens = append(tokens, strings.ToUpper(parts[i]))
+		}
+	}
+	// 反转回正序
+	for i, j := 0, len(tokens)-1; i < j; i, j = i+1, j-1 {
+		tokens[i], tokens[j] = tokens[j], tokens[i]
+	}
+	return tokens
+}
+
 // lastSignificantToken 返回前缀中最后一个非空 token。
 func lastSignificantToken(s string) string {
 	re := regexp.MustCompile(`(?:\s+|,)+`)
@@ -108,41 +135,45 @@ func lastSignificantToken(s string) string {
 	return ""
 }
 
-// cursorOffset 将 1-based 行列转换为字节偏移。
-func cursorOffset(sql string, line, column int) int {
-	if line <= 1 {
-		if column <= 1 {
-			return 0
-		}
-		return min(column-1, len(sql))
-	}
-	currentLine := 1
-	for i, c := range []byte(sql) {
-		if c == '\n' {
-			currentLine++
-			if currentLine == line {
-				next := i + column
-				if next > len(sql) {
-					return len(sql)
-				}
-				return next
-			}
-		}
-	}
-	return len(sql)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // extractTablesFromStmt 从语句中提取表引用。
 func extractTablesFromStmt(stmt ast.StmtNode, res *ParseResult) {
 	v := &tableVisitor{res: res}
 	stmt.Accept(v)
+}
+
+// findStmtAtCursor 根据 OriginTextPosition 找到包含光标偏移的语句。
+func findStmtAtCursor(stmts []ast.StmtNode, sql string, offset int) ast.StmtNode {
+	if len(stmts) == 0 {
+		return nil
+	}
+	// 按语句起始偏移排序
+	type posStmt struct {
+		pos  int
+		stmt ast.StmtNode
+	}
+	ordered := make([]posStmt, 0, len(stmts))
+	for _, stmt := range stmts {
+		pos := stmt.OriginTextPosition()
+		ordered = append(ordered, posStmt{pos: pos, stmt: stmt})
+	}
+	for i := 0; i < len(ordered)-1; i++ {
+		for j := i + 1; j < len(ordered); j++ {
+			if ordered[j].pos < ordered[i].pos {
+				ordered[i], ordered[j] = ordered[j], ordered[i]
+			}
+		}
+	}
+	for i := range ordered {
+		start := ordered[i].pos
+		end := len(sql)
+		if i+1 < len(ordered) {
+			end = ordered[i+1].pos
+		}
+		if offset >= start && offset < end {
+			return ordered[i].stmt
+		}
+	}
+	return ordered[len(ordered)-1].stmt
 }
 
 type tableVisitor struct {
@@ -172,24 +203,4 @@ func (v *tableVisitor) Enter(in ast.Node) (ast.Node, bool) {
 
 func (v *tableVisitor) Leave(in ast.Node) (ast.Node, bool) {
 	return in, true
-}
-
-// fallbackExtractTables 用正则从 FROM/JOIN 子句提取表名。
-func fallbackExtractTables(prefix string, res *ParseResult) {
-	re := regexp.MustCompile(`(?i)(?:from|join)\s+(?:` + "`" + `?([A-Za-z_][A-Za-z0-9_]*)` + "`" + `?)(?:\s+(?:as\s+)?(?:` + "`" + `?([A-Za-z_][A-Za-z0-9_]*)` + "`" + `?))?`)
-	matches := re.FindAllStringSubmatch(prefix, -1)
-	for _, m := range matches {
-		ref := TableRef{Name: unquote(m[1])}
-		if len(m) > 2 && m[2] != "" {
-			ref.Alias = unquote(m[2])
-		}
-		res.Tables = append(res.Tables, ref)
-	}
-}
-
-func unquote(s string) string {
-	if len(s) >= 2 && ((s[0] == '`' && s[len(s)-1] == '`') || (s[0] == '"' && s[len(s)-1] == '"')) {
-		return s[1 : len(s)-1]
-	}
-	return s
 }

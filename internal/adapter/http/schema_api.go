@@ -4,17 +4,19 @@ package http
 import (
 	"cyancat/internal/adapter/dto"
 	"cyancat/internal/application/schemaservice"
+	"cyancat/internal/application/sqlcompleteservice"
 	"cyancat/internal/infra/api"
 )
 
 // SchemaAPI 元数据查询 API（通过 Wails Bindings 暴露给前端）
 type SchemaAPI struct {
-	svc schemaservice.SchemaService
+	svc            schemaservice.SchemaService
+	sqlCompleteSvc sqlcompleteservice.Service
 }
 
 // NewSchemaAPI 创建 SchemaAPI
-func NewSchemaAPI(svc schemaservice.SchemaService) *SchemaAPI {
-	return &SchemaAPI{svc: svc}
+func NewSchemaAPI(svc schemaservice.SchemaService, sqlCompleteSvc sqlcompleteservice.Service) *SchemaAPI {
+	return &SchemaAPI{svc: svc, sqlCompleteSvc: sqlCompleteSvc}
 }
 
 // ListDatabases 列出数据库
@@ -196,6 +198,10 @@ func (a *SchemaAPI) CreateDatabase(req *dto.CreateDatabaseRequest) *api.Response
 	if err := a.svc.CreateDatabase(cmd); err != nil {
 		return api.Fail[bool](api.ErrorCode, false, err.Error())
 	}
+	if a.sqlCompleteSvc != nil {
+		a.sqlCompleteSvc.ClearSchemaCache(req.ConnID, "")
+		a.sqlCompleteSvc.ClearTableCache(req.ConnID, "", "")
+	}
 	return api.Success(true)
 }
 
@@ -225,6 +231,10 @@ func (a *SchemaAPI) DropDatabase(req *dto.DropDatabaseRequest) *api.Response[boo
 	if err := a.svc.DropDatabase(dto.ToDropDatabaseCmd(req)); err != nil {
 		return api.Fail[bool](api.ErrorCode, false, err.Error())
 	}
+	if a.sqlCompleteSvc != nil {
+		a.sqlCompleteSvc.ClearSchemaCache(req.ConnID, "")
+		a.sqlCompleteSvc.ClearTableCache(req.ConnID, "", "")
+	}
 	return api.Success(true)
 }
 
@@ -240,6 +250,9 @@ func (a *SchemaAPI) CreateTable(req *dto.CreateTableRequest) *api.Response[bool]
 	if err := a.svc.CreateTable(cmd); err != nil {
 		return api.Fail[bool](api.ErrorCode, false, err.Error())
 	}
+	if a.sqlCompleteSvc != nil {
+		a.sqlCompleteSvc.ClearTableCache(req.ConnID, req.Database, req.Schema)
+	}
 	return api.Success(true)
 }
 
@@ -254,6 +267,9 @@ func (a *SchemaAPI) AlterTable(req *dto.AlterTableRequest) *api.Response[bool] {
 	cmd := dto.ToAlterTableCmd(req)
 	if err := a.svc.AlterTable(cmd); err != nil {
 		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	if a.sqlCompleteSvc != nil {
+		a.sqlCompleteSvc.ClearTableCache(req.ConnID, req.Database, req.Schema)
 	}
 	return api.Success(true)
 }
@@ -295,6 +311,9 @@ func (a *SchemaAPI) DropTable(req *dto.DropTableRequest) *api.Response[bool] {
 	}
 	if err := a.svc.DropTable(cmd); err != nil {
 		return api.Fail[bool](api.ErrorCode, false, err.Error())
+	}
+	if a.sqlCompleteSvc != nil {
+		a.sqlCompleteSvc.ClearTableCache(req.ConnID, req.Database, req.Schema)
 	}
 	return api.Success(true)
 }

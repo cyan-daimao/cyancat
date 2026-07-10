@@ -14,4 +14,6 @@ type StartMcpServerCmd struct {
 	AllowDelete bool
 	// AllowDDL 允许 CREATE / ALTER / DROP / TRUNCATE / RENAME 等 DDL
 	AllowDDL bool
+	// ForceNewPort 是否强制使用新端口（忽略历史端口）
+	ForceNewPort bool
 }
