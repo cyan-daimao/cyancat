@@ -12,6 +12,7 @@ import (
 	"cyancat/internal/application/mcpservice"
 	"cyancat/internal/application/queryservice"
 	"cyancat/internal/application/schemaservice"
+	"cyancat/internal/application/sqlcompleteservice"
 	"cyancat/internal/infra/db"
 	"cyancat/internal/infra/db/connectionrepo"
 	"cyancat/internal/infra/db/historyrepo"
@@ -79,11 +80,12 @@ func main() {
 	historyRepo := historyrepo.NewQueryHistoryRepository()
 	queryService := queryservice.NewQueryServiceImpl(sessionManager, bus, historyRepo)
 	schemaService := schemaservice.NewSchemaServiceImpl(sessionManager)
+	sqlCompleteService := sqlcompleteservice.NewServiceImpl(schemaService)
 	mcpManager := mcpserver.NewManager()
 	connectionService.SetMcpStopper(mcpManager)
 	mcpService := mcpservice.NewMcpServiceImpl(mcpRepo, connectionService, queryService, sessionManager, mcpManager)
 
-	app := adapter.NewApp(connectionService, queryService, schemaService, mcpService)
+	app := adapter.NewApp(connectionService, queryService, schemaService, mcpService, sqlCompleteService)
 
 	// 7. 启动 Wails
 	if err := wails.Run(&options.App{
@@ -120,6 +122,7 @@ func main() {
 			app.McpAPI,
 			app.ExportAPI,
 			app.FileDialogAPI,
+			app.SqlCompleteAPI,
 		},
 	}); err != nil {
 		logger.L().Fatal().Err(err).Msg("wails run failed")

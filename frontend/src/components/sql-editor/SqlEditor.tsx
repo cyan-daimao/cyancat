@@ -1,9 +1,10 @@
 import React from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import { Button } from '@/components/ui/button';
 import { Play, Square } from 'lucide-react';
 import { useQueryStore } from '@/stores/query';
-import { SqlHintContext, useSqlHintStore } from '@/stores/sql-hints';
+import { sqlCompleteApi } from '@/lib/api/sql-complete';
 import { quoteIdent, resolveDialect } from '@/lib/sql-ident';
 import { toast } from '@/components/ui/use-toast';
 
@@ -29,12 +30,31 @@ const SQL_KEYWORDS = [
 ];
 
 let completionProviderRegistered = false;
-let latestHintContext: SqlHintContext = { connID: 0 };
+let latestHintContext = { connID: 0, connectionType: undefined as string | undefined, database: undefined as string | undefined, schema: undefined as string | undefined };
 
-/** 按方言给补全插入的标识符加引号（简单名不加）。 */
-function quoteIdentifier(name: string, connectionType?: string): string {
-  return quoteIdent(name, resolveDialect(connectionType));
-}
+// 配置 Monaco Editor 使用本地 monaco-editor 实例，避免从 CDN 加载 worker，
+// 解决 Wails 桌面应用在生产环境中无法联网时编辑器一直显示 Loading 的问题。
+(self as any).MonacoEnvironment = {
+  getWorker(_: unknown, label: string) {
+    const workerUrl = (() => {
+      switch (label) {
+        case 'json':
+          return new URL('monaco-editor/esm/vs/language/json/json.worker?worker', import.meta.url);
+        case 'css':
+          return new URL('monaco-editor/esm/vs/language/css/css.worker?worker', import.meta.url);
+        case 'html':
+          return new URL('monaco-editor/esm/vs/language/html/html.worker?worker', import.meta.url);
+        case 'typescript':
+        case 'javascript':
+          return new URL('monaco-editor/esm/vs/language/typescript/ts.worker?worker', import.meta.url);
+        default:
+          return new URL('monaco-editor/esm/vs/editor/editor.worker?worker', import.meta.url);
+      }
+    })();
+    return new Worker(workerUrl, { type: 'module' });
+  },
+};
+loader.config({ monaco });
 
 function completionRange(model: any, position: any) {
   const word = model.getWordUntilPosition(position);
@@ -46,88 +66,52 @@ function completionRange(model: any, position: any) {
   };
 }
 
-function detectMemberAccess(model: any, position: any): string | null {
-  const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
-  const match = line.match(/(?:`([^`]+)`|"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\.\s*([A-Za-z_][A-Za-z0-9_]*)?$/);
-  return match ? (match[1] || match[2] || match[3] || null) : null;
-}
-
 function registerSqlCompletionProvider(monaco: any) {
   if (completionProviderRegistered) return;
   completionProviderRegistered = true;
 
   monaco.languages.registerCompletionItemProvider('sql', {
-    triggerCharacters: ['.', '`', '"'],
+    triggerCharacters: ['.', ' ', '\n'],
     provideCompletionItems: async (model: any, position: any) => {
       const range = completionRange(model, position);
       const ctx = latestHintContext;
-      const store = useSqlHintStore.getState();
-      const memberTable = detectMemberAccess(model, position);
+      if (!ctx.connID) {
+        return { suggestions: [] };
+      }
 
-      if (memberTable && ctx.connID && ctx.database) {
-        const columns = await store.ensureTableColumns(ctx, memberTable);
+      try {
+        const candidates = await sqlCompleteApi.complete({
+          connID: ctx.connID,
+          connectionType: ctx.connectionType,
+          database: ctx.database,
+          schema: ctx.schema,
+          sql: model.getValue(),
+          cursorLine: position.lineNumber,
+          cursorColumn: position.column,
+        });
+
+        const kindMap: Record<string, number> = {
+          keyword: monaco.languages.CompletionItemKind.Keyword,
+          table: monaco.languages.CompletionItemKind.Struct,
+          view: monaco.languages.CompletionItemKind.Module,
+          column: monaco.languages.CompletionItemKind.Field,
+          function: monaco.languages.CompletionItemKind.Function,
+        };
+
         return {
-          suggestions: columns.map((column, index) => ({
-            label: column.name,
-            kind: monaco.languages.CompletionItemKind.Field,
-            insertText: quoteIdentifier(column.name, ctx.connectionType),
+          suggestions: candidates.map((c, index) => ({
+            label: c.label,
+            kind: kindMap[c.kind] ?? monaco.languages.CompletionItemKind.Text,
+            insertText: c.insertText,
             range,
-            detail: column.databaseType,
-            documentation: [
-              column.isPrimary ? 'Primary Key' : '',
-              column.nullable ? 'Nullable' : 'Not Null',
-              column.comment || '',
-            ].filter(Boolean).join('\n'),
-            sortText: `1_${String(index).padStart(4, '0')}_${column.name}`,
+            detail: c.detail,
+            sortText: c.sortText || `${String(index).padStart(4, '0')}_${c.label}`,
           })),
         };
+      } catch (e: any) {
+        // 后端补全失败时静默降级，不阻塞输入
+        return { suggestions: [] };
       }
-
-      const keywordSuggestions = SQL_KEYWORDS.map((keyword, index) => ({
-        label: keyword,
-        kind: monaco.languages.CompletionItemKind.Keyword,
-        insertText: keyword,
-        range,
-        detail: 'SQL keyword',
-        sortText: `3_${String(index).padStart(4, '0')}_${keyword}`,
-      }));
-
-      if (!ctx.connID || !ctx.database) {
-        return { suggestions: keywordSuggestions };
-      }
-
-      const catalog = await store.ensureCatalog(ctx);
-      if (!catalog) {
-        return { suggestions: keywordSuggestions };
-      }
-
-      const tableSuggestions = catalog.tables.map((table, index) => ({
-        label: table.name,
-        kind: monaco.languages.CompletionItemKind.Struct,
-        insertText: quoteIdentifier(table.name, ctx.connectionType),
-        range,
-        detail: 'table',
-        documentation: table.comment || '',
-        sortText: `1_${String(index).padStart(4, '0')}_${table.name}`,
-      }));
-
-      const viewSuggestions = catalog.views.map((view, index) => ({
-        label: view.name,
-        kind: monaco.languages.CompletionItemKind.Module,
-        insertText: quoteIdentifier(view.name, ctx.connectionType),
-        range,
-        detail: 'view',
-        documentation: view.definition || '',
-        sortText: `2_${String(index).padStart(4, '0')}_${view.name}`,
-      }));
-
-      return {
-        suggestions: [
-          ...tableSuggestions,
-          ...viewSuggestions,
-          ...keywordSuggestions,
-        ],
-      };
     },
   });
 }

@@ -317,3 +317,23 @@ export interface StartMcpServerRequest {
   allowDelete: boolean;
   allowDDL: boolean;
 }
+
+// SqlCompleteRequest SQL 补全请求
+export interface SqlCompleteRequest {
+  connID: number;
+  connectionType?: string;
+  database?: string;
+  schema?: string;
+  sql: string;
+  cursorLine: number;
+  cursorColumn: number;
+}
+
+// SqlCompleteCandidate 单个补全候选
+export interface SqlCompleteCandidate {
+  label: string;
+  kind: string;
+  detail: string;
+  insertText: string;
+  sortText: string;
+}

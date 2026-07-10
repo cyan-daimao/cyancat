@@ -113,3 +113,22 @@ CXX=x86_64-w64-mingw32-g++ \
   `CC=x86_64-w64-mingw32-gcc`。
 - **想要 CI 自动出包**：GitHub Actions 用 `macos-latest` runner，一个 job 即可打 mac + windows
   （job 内 `brew install mingw-w64` 后按上面命令构建）。
+
+## macOS 15.4+ 编译注意事项
+
+macOS 15.4 及更新版本在 SDK 中声明了 `strchrnul`，但默认带可用性检查，导致 `pg_query_go` / `go-sqlite3` 的 CGO 编译报 "static declaration of 'strchrnul' follows non-static declaration"。
+
+`scripts/build-all.sh` 已自动检测主机版本，仅在 macOS 15.4+ 构建 darwin 目标时设置：
+
+```bash
+export CGO_CFLAGS="-DHAVE_STRCHRNUL"
+```
+
+手动构建时，**只有**在 macOS 15.4+ 且遇到上述错误时才设置：
+
+```bash
+export CGO_CFLAGS="-DHAVE_STRCHRNUL"
+wails build -platform darwin/arm64 -clean
+```
+
+> ⚠️ 旧版 macOS、Linux 或 Windows 交叉编译环境不要设置 `-DHAVE_STRCHRNUL`，否则会出现 `implicit declaration of function 'strchrnul'` 错误。

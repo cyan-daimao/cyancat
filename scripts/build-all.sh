@@ -73,6 +73,28 @@ check_tool() {
   }
 }
 
+# 检测当前 macOS 版本是否 >= 15.4
+is_macos_15_4_or_later() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return 1
+  fi
+  local version
+  version=$(sw_vers -productVersion 2>/dev/null || echo "0.0")
+  local IFS=.
+  local -a current=($version)
+  local -a required=(15 4 0)
+  for i in 0 1 2; do
+    local c="${current[$i]:-0}"
+    local r="${required[$i]}"
+    if (( c > r )); then
+      return 0
+    elif (( c < r )); then
+      return 1
+    fi
+  done
+  return 0
+}
+
 echo "🔧 检查基础依赖..."
 check_tool go
 check_tool wails
@@ -86,6 +108,14 @@ for t in "${TARGETS[@]}"; do
   fi
 done
 
+# 预生成 bindings（仅 macOS 15.4+ 需要）
+# Wails 交叉编译 Windows/Linux 时，生成 bindings 阶段仍在本机 darwin 上跑 CGO，
+# 会和 SDK 的 strchrnul 声明冲突；先在本机生成好 bindings，后续 build 跳过此阶段。
+if is_macos_15_4_or_later; then
+  echo "🔧 预生成 Wails bindings（macOS 15.4+ 需要 CGO_CFLAGS=-DHAVE_STRCHRNUL）..."
+  CGO_ENABLED=1 CGO_CFLAGS="-DHAVE_STRCHRNUL" wails generate module
+fi
+
 # 清空归档目录
 rm -rf "$DIST"
 mkdir -p "$DIST"
@@ -93,10 +123,12 @@ mkdir -p "$DIST"
 # ────────────────────────────────────────────────────────────
 # 单平台构建
 # ────────────────────────────────────────────────────────────
+
 build_one() {
   local target="$1"
   local cc="${CC_FOR[$target]:-}"
   local cxx="${CXX_FOR[$target]:-}"
+  local cgo_cflags=""
   local stem="${target//\//-}"   # darwin/arm64 -> darwin-arm64
 
   echo ""
@@ -106,29 +138,47 @@ build_one() {
 
   if [ -n "$cc" ]; then
     # 跨平台：指定 C/C++ 工具链
-    export CC="$cc" CXX="$cxx" CGO_ENABLED=1
     echo "   CC  = $cc"
     echo "   CXX = $cxx"
   else
     # 本机/同族：darwin 用 clang，CGO 开启（go-sqlite3 需要）
-    export CC=clang CXX=clang++ CGO_ENABLED=1
+    cc=clang
+    cxx=clang++
     unset GOOS GOARCH  # wails build -platform 会设
   fi
+
+  # macOS 15.4+ 上 SDK 声明了 strchrnul 但带可用性检查，需要显式设置 HAVE_STRCHRNUL
+  # 避免 "static declaration of 'strchrnul' follows non-static declaration"。
+  # 旧版 macOS / 其他平台没有 strchrnul，不能盲目设置该 flag。
+  case "$target" in
+    darwin/*)
+      if is_macos_15_4_or_later; then
+        cgo_cflags="-DHAVE_STRCHRNUL"
+        echo "   CGO_CFLAGS = $cgo_cflags"
+      fi
+      ;;
+  esac
 
   # 清掉上次残留产物，避免归档时误判
   rm -f "$BIN/cyancat" "$BIN/cyancat.exe"
   rm -rf "$BIN/cyancat.app"
 
   # wails build 自动跑前端 npm build + 后端 go build
-  wails build -platform "$target" -trimpath -clean
+  # 环境变量仅作用于本次构建，避免 darwin 的 CGO_CFLAGS 泄漏给 windows。
+  # bindings 已在脚本开头预生成，所有平台均跳过，避免 windows 交叉编译时
+  # 在 darwin 主机上再次触发 CGO 编译。
+  CC="$cc" CXX="$cxx" CGO_ENABLED=1 CGO_CFLAGS="$cgo_cflags" \
+    wails build -platform "$target" -trimpath -clean -skipbindings
 
-  # 归档产物到 build/dist，文件名带平台后缀
+  # 归档产物到 build/dist
+  # macOS：app 名称保持 cyancat.app，压缩包统一命名为 cyancat-mac.zip
   case "$target" in
     darwin/*)
       if [ -d "$BIN/cyancat.app" ]; then
-        mv "$BIN/cyancat.app" "$DIST/cyancat-$stem.app"
-        (cd "$DIST" && zip -qr "cyancat-$stem.zip" "cyancat-$stem.app")
-        echo "   ✅ $DIST/cyancat-$stem.app (+ .zip)"
+        mkdir -p "$DIST"
+        cp -R "$BIN/cyancat.app" "$DIST/cyancat.app"
+        (cd "$DIST" && zip -qr "cyancat-mac.zip" "cyancat.app")
+        echo "   ✅ $DIST/cyancat-mac.zip (app 名称保持 cyancat.app)"
       else
         echo "   ⚠️  未找到 cyancat.app"
       fi

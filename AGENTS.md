@@ -202,6 +202,8 @@ CXX=x86_64-w64-mingw32-g++ \
 
 产物输出到 `build/bin/`。
 
+> **macOS 15.4+ 注意**：该版本 SDK 新增了 `strchrnul` 声明，导致 `pg_query_go` / `go-sqlite3` CGO 编译报 "static declaration follows non-static declaration"。`scripts/build-all.sh` 会自动检测主机版本并设置 `CGO_CFLAGS="-DHAVE_STRCHRNUL"`。手动构建时若遇到该错误可设置此环境变量；**旧版 macOS / Linux / Windows 交叉编译请勿设置，否则会出现 implicit declaration 错误**。
+
 ### 4.4 一键脚本
 
 ```bash

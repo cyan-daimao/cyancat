@@ -7,6 +7,7 @@ import (
 	"cyancat/internal/application/mcpservice"
 	"cyancat/internal/application/queryservice"
 	"cyancat/internal/application/schemaservice"
+	"cyancat/internal/application/sqlcompleteservice"
 )
 
 // App 应用聚合根，所有 API 都挂载在此结构体上，由 Wails 一次性绑定给前端
@@ -23,6 +24,8 @@ type App struct {
 	ExportAPI *http.ExportAPI
 	// FileDialogAPI 文件选择 API
 	FileDialogAPI *http.FileDialogAPI
+	// SqlCompleteAPI SQL 智能补全 API
+	SqlCompleteAPI *http.SqlCompleteAPI
 }
 
 // NewApp 构造 App
@@ -31,13 +34,15 @@ func NewApp(
 	queryService queryservice.QueryService,
 	schemaService schemaservice.SchemaService,
 	mcpService mcpservice.McpService,
+	sqlCompleteService sqlcompleteservice.Service,
 ) *App {
 	return &App{
-		ConnectionAPI: http.NewConnectionAPI(connectionService),
-		QueryAPI:      http.NewQueryAPI(queryService),
-		SchemaAPI:     http.NewSchemaAPI(schemaService),
-		McpAPI:        http.NewMcpAPI(mcpService),
-		ExportAPI:     http.NewExportAPI(),
-		FileDialogAPI: http.NewFileDialogAPI(),
+		ConnectionAPI:  http.NewConnectionAPI(connectionService),
+		QueryAPI:       http.NewQueryAPI(queryService),
+		SchemaAPI:      http.NewSchemaAPI(schemaService),
+		McpAPI:         http.NewMcpAPI(mcpService),
+		ExportAPI:      http.NewExportAPI(),
+		FileDialogAPI:  http.NewFileDialogAPI(),
+		SqlCompleteAPI: http.NewSqlCompleteAPI(sqlCompleteService),
 	}
 }
