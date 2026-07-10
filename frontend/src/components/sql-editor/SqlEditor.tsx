@@ -71,7 +71,7 @@ function registerSqlCompletionProvider(monaco: any) {
   completionProviderRegistered = true;
 
   monaco.languages.registerCompletionItemProvider('sql', {
-    triggerCharacters: ['.', ' ', '\n'],
+    triggerCharacters: ['.', ' '],
     provideCompletionItems: async (model: any, position: any) => {
       const range = completionRange(model, position);
       const ctx = latestHintContext;

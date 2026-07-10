@@ -220,19 +220,26 @@ func (s *ServiceImpl) completeKeyword() []CompleteCandidate {
 }
 
 // resolvePrefixToTables 把 alias/table 前缀解析成实际的 TableRef。
+// 如果存在多个相同 alias（如自连接或子查询重名），返回所有匹配项，由调用方合并字段。
 func (s *ServiceImpl) resolvePrefixToTables(parseRes *parser.ParseResult, query *CompleteQuery) []parser.TableRef {
 	prefix := strings.TrimSpace(parseRes.TablePrefix)
+	var matched []parser.TableRef
 	for _, t := range parseRes.Tables {
 		if strings.EqualFold(t.Alias, prefix) {
-			return []parser.TableRef{t}
+			matched = append(matched, t)
+			continue
 		}
 		if strings.EqualFold(t.Name, prefix) {
-			return []parser.TableRef{t}
+			matched = append(matched, t)
+			continue
 		}
 		// PostgreSQL 可能带 schema 前缀：schema.table
 		if t.Schema != "" && strings.EqualFold(t.Schema+"."+t.Name, prefix) {
-			return []parser.TableRef{t}
+			matched = append(matched, t)
 		}
+	}
+	if len(matched) > 0 {
+		return matched
 	}
 	// 未找到时尝试用前缀作为表名直接查
 	return []parser.TableRef{{Name: prefix, Schema: query.Schema}}
