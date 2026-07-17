@@ -61,11 +61,17 @@ func (s *McpServiceImpl) GetStatus(connID int64) (*McpServerStatusBO, error) {
 		bo = &McpServerStatusBO{ConnID: connID}
 	}
 
-	// 若内存中正在运行，以运行状态为准
+	// Enabled/Address/Token 以内存实际运行状态为准：
+	// 应用退出时仅停止内存服务、DB 中 enabled 仍为 true，
+	// 若直接采信 DB，重启后会误显示“运行中”但服务并未运行
 	if info := s.mcpMgr.GetStatus(connID); info != nil {
-		bo.Enabled = info.Enabled
+		bo.Enabled = true
 		bo.Address = info.Address
 		bo.Token = info.Token
+	} else {
+		bo.Enabled = false
+		bo.Address = ""
+		bo.Token = ""
 	}
 
 	return bo, nil
@@ -93,9 +99,17 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 		return nil, fmt.Errorf("mcpservice: get existing config failed: %w", err)
 	}
 
-	token, err := generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("mcpservice: generate token failed: %w", err)
+	// 复用历史 token：保证停止再开启（含重启应用后再开启）后 SSE 地址与凭据不变，
+	// agent 侧已安装的 claude mcp 配置无需重新安装
+	token := ""
+	if existing != nil {
+		token = existing.Token
+	}
+	if token == "" {
+		token, err = generateToken()
+		if err != nil {
+			return nil, fmt.Errorf("mcpservice: generate token failed: %w", err)
+		}
 	}
 
 	bo := &McpServerStatusBO{

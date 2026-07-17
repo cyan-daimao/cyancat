@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useDesignerStore } from '@/stores/designer';
+import { useConnectionStore } from '@/stores/connection';
 import { mcpApi, McpPortConflictError } from '@/lib/api/mcp';
 import { toast } from '@/components/ui/use-toast';
 import { Bot, Copy, Power, PowerOff, Loader2 } from 'lucide-react';
@@ -14,6 +15,15 @@ import type { McpServerStatusDTO } from '@/lib/api/types';
 const McpServerDialog: React.FC = () => {
   const { mcpServerDialogOpen, mcpServerDialogContext, closeMcpServerDialog } = useDesignerStore();
   const connID = mcpServerDialogContext?.connID ?? 0;
+  const connName = useConnectionStore(s => s.connections.find(c => c.id === connID)?.name);
+
+  // MCP server 名使用数据源名称，多个数据源分别安装时互不冲突；
+  // sanitize：保留中英文/数字/_-，空白与 shell 特殊字符转为 -
+  const serverName = React.useMemo(() => {
+    const base = (connName || `connection-${connID}`).trim();
+    const sanitized = base.replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '');
+    return sanitized || `connection-${connID}`;
+  }, [connName, connID]);
 
   const [status, setStatus] = React.useState<McpServerStatusDTO | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -111,10 +121,10 @@ const McpServerDialog: React.FC = () => {
   const token = status?.enabled && status.token ? status.token : '';
 
   const installCommand = sseUrl
-    ? `claude mcp add --transport sse dbstudio "${sseUrl}" \\\n  --header "Authorization: Bearer ${token}"`
+    ? `claude mcp add --transport sse ${serverName} "${sseUrl}" \\\n  --header "Authorization: Bearer ${token}"`
     : '';
 
-  const uninstallCommand = 'claude mcp remove dbstudio';
+  const uninstallCommand = `claude mcp remove ${serverName}`;
 
   const curlExample = sseUrl
     ? `curl -N -H "Accept: text/event-stream" -H "Authorization: Bearer ${token}" "${sseUrl}"`
@@ -123,7 +133,7 @@ const McpServerDialog: React.FC = () => {
   const clientConfig = sseUrl
     ? JSON.stringify({
         mcpServers: {
-          dbstudio: {
+          [serverName]: {
             transport: 'sse',
             url: sseUrl,
             headers: {
