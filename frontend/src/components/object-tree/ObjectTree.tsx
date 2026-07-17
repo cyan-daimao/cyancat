@@ -6,9 +6,10 @@ import { useConnectionStore } from '@/stores/connection';
 import { useSchemaStore, DEFAULT_TABLE_PAGE_SIZE, type TreeNode } from '@/stores/schema';
 import {
   ChevronRight, ChevronDown, ChevronLeft, Database, Server, Table, Eye, Columns,
-  FolderOpen, Key, Link2, Loader2, FileType, Plus, Search, X,
+  FolderOpen, Key, Link2, Loader2, FileType, Plus, Search, SearchX, X,
 } from 'lucide-react';
 import ObjectTreeContextMenu from './ObjectTreeContextMenu';
+import EmptyState from '@/components/ui/empty-state';
 
 const iconMap: Record<string, React.ReactNode> = {
   connection: <Server className="h-4 w-4 text-blue-500" />,
@@ -36,7 +37,7 @@ interface ObjectTreeProps {
 }
 
 const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowProperties, onCollapse }) => {
-  const { connections, openConnIds, openConnection, closeConnection } = useConnectionStore();
+  const { connections, openConnIds, openConnection } = useConnectionStore();
   const {
     trees,
     expandedKeys,
@@ -51,7 +52,6 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
     searchTables,
     loadTableDetail,
     toggleExpand,
-    resetTree,
   } = useSchemaStore();
   const [loadingKeys, setLoadingKeys] = React.useState<Set<string>>(new Set());
 
@@ -60,6 +60,8 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
   const trimmedKeyword = searchKeyword.trim().toLowerCase();
   const [debouncedKeyword, setDebouncedKeyword] = React.useState('');
   const isSearching = debouncedKeyword.length > 0;
+  // 任一节点搜索进行中即显示加载指示
+  const isSearchLoading = isSearching && Object.values(searchMap).some(s => s.loading);
   const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -163,14 +165,6 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
       await handleConnectionClick(node);
     } else if (hasChildren) {
       await handleToggle(node);
-    }
-  };
-
-  const handleConnectionDoubleClick = async (e: React.MouseEvent, node: TreeNode) => {
-    e.stopPropagation();
-    if (openConnIds.has(node.connID)) {
-      await closeConnection(node.connID);
-      resetTree(node.connID);
     }
   };
 
@@ -350,8 +344,7 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
           }`}
           style={{ ...style, paddingLeft: `${depth * 16 + 4}px` }}
           onClick={() => handleNodeClick(node, hasChildren)}
-          onDoubleClick={node.type === 'connection' ? (e) => handleConnectionDoubleClick(e, node) : undefined}
-          title={node.type === 'connection' ? '点击展开/收起，双击关闭连接' : undefined}
+          title={node.type === 'connection' ? '点击展开/收起' : undefined}
         >
           {hasChildren ? (
             <span onClick={(e) => handleChevronClick(e, node)} className="shrink-0">
@@ -419,6 +412,9 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
             placeholder="搜索数据库 / 表"
             className="h-7 pl-7 pr-7 text-xs"
           />
+          {isSearchLoading && (
+            <Loader2 className="absolute right-6 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground pointer-events-none" />
+          )}
           {searchKeyword && (
             <button
               type="button"
@@ -434,9 +430,22 @@ const ObjectTree: React.FC<ObjectTreeProps> = ({ onCreateConnection, onShowPrope
 
       <div ref={parentRef} className="flex-1 overflow-auto" onScroll={handleScroll}>
         {visibleItems.length === 0 ? (
-          <div className="text-xs text-muted-foreground text-center py-4">
-            {isSearching ? '无匹配结果' : '暂无连接'}
-          </div>
+          isSearching ? (
+            <EmptyState
+              icon={SearchX}
+              title="无匹配结果"
+              description="仅搜索已展开的数据库"
+              className="py-10"
+            />
+          ) : (
+            <EmptyState
+              icon={Database}
+              title="暂无连接"
+              description="创建一个数据源连接开始浏览"
+              action={onCreateConnection ? { label: '新建连接', onClick: onCreateConnection } : undefined}
+              className="py-10"
+            />
+          )
         ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
             {virtualItems.map((virtualItem) => (

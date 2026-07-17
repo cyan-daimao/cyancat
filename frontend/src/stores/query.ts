@@ -51,6 +51,8 @@ interface QueryState {
   results: QueryResultDTO[];
   activeResultIndex: number;
   executing: boolean;
+  /** 正在执行查询的连接 ID（用于按 tab 显示“取消”按钮），非执行中为 null */
+  executingConnID: number | null;
   history: QueryHistoryDTO[];
   historyLoading: boolean;
 
@@ -81,6 +83,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   results: [],
   activeResultIndex: 0,
   executing: false,
+  executingConnID: null,
   history: [],
   historyLoading: false,
 
@@ -218,34 +221,47 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   })),
 
   execute: async (req) => {
-    set({ executing: true });
+    // 捕获发起时的标签页：执行期间用户可能切换 tab，结果必须落回发起 tab
+    const sourceTabId = get().activeQueryTabId;
+    set({ executing: true, executingConnID: req.connID });
     try {
       const result = await queryApi.execute(req);
+      let landedOnBackgroundTab = false;
       set(state => {
+        // 发起 tab 已被关闭：丢弃结果
+        if (!state.queryTabs.some(tab => tab.id === sourceTabId)) {
+          return { executing: false, executingConnID: null };
+        }
         const queryTabs = state.queryTabs.map(tab => {
-          if (tab.id !== state.activeQueryTabId) return tab;
+          if (tab.id !== sourceTabId) return tab;
           const results = [...tab.results, result];
           return { ...tab, results, activeResultIndex: results.length - 1 };
         });
+        landedOnBackgroundTab = sourceTabId !== state.activeQueryTabId;
         const active = queryTabs.find(tab => tab.id === state.activeQueryTabId) || queryTabs[0];
         return {
           queryTabs,
           results: active?.results || [],
           activeResultIndex: active?.activeResultIndex || 0,
           executing: false,
+          executingConnID: null,
         };
       });
+      if (landedOnBackgroundTab) {
+        const tab = get().queryTabs.find(t => t.id === sourceTabId);
+        toast({ title: `${tab?.title || '查询'} 已完成` });
+      }
       return result;
     } catch (e: any) {
       toast({ title: '执行失败', description: e.message, variant: 'destructive' });
-      set({ executing: false });
+      set({ executing: false, executingConnID: null });
       return null;
     }
   },
 
   cancel: async (connID) => {
     await queryApi.cancel(connID);
-    set({ executing: false });
+    set({ executing: false, executingConnID: null });
   },
 
   setActiveResult: (index) => set(state => ({

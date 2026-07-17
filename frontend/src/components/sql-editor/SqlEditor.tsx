@@ -4,6 +4,7 @@ import * as monaco from 'monaco-editor';
 import { Button } from '@/components/ui/button';
 import { Play, Square } from 'lucide-react';
 import { useQueryStore } from '@/stores/query';
+import { useTheme } from '@/lib/theme';
 import { sqlCompleteApi } from '@/lib/api/sql-complete';
 import { quoteIdent, resolveDialect } from '@/lib/sql-ident';
 import { toast } from '@/components/ui/use-toast';
@@ -156,7 +157,10 @@ function formatSql(sql: string): string {
 }
 
 const SqlEditor: React.FC<SqlEditorProps> = ({ connID, connectionType, database, schema, contextLabel, sql, onSqlChange }) => {
-  const { execute, executing } = useQueryStore();
+  const { execute, executing, executingConnID, cancel } = useQueryStore();
+  const { resolvedTheme } = useTheme();
+  // 本 tab 的连接正在执行：按钮变为可点击的「取消」
+  const canCancel = executing && executingConnID !== null && executingConnID === connID;
   const editorRef = React.useRef<any>(null);
   const contextRef = React.useRef({ connID, database, schema });
 
@@ -260,10 +264,23 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, connectionType, database,
     <div className="flex flex-col h-full">
       {/* 工具栏 */}
       <div className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0">
-        <Button size="sm" variant="ghost" onClick={handleExecute} disabled={executing || !connID}>
-          {executing ? <Square className="h-3 w-3 mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-          {executing ? '执行中...' : '执行'}
-        </Button>
+        {canCancel ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={() => cancel(connID)}
+            title="取消当前查询"
+          >
+            <Square className="h-3 w-3 mr-1" />
+            取消
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={handleExecute} disabled={executing || !connID}>
+            {executing ? <Square className="h-3 w-3 mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+            {executing ? '执行中...' : '执行'}
+          </Button>
+        )}
         <span className="text-xs text-muted-foreground ml-2">⌘+Enter 执行选中 / 全部</span>
         <span className="ml-auto max-w-[45%] truncate text-xs text-muted-foreground" title={contextLabel || '未绑定执行上下文'}>
           {contextLabel || '未绑定执行上下文'}
@@ -275,7 +292,7 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ connID, connectionType, database,
         <Editor
           height="100%"
           language="sql"
-          theme="vs-dark"
+          theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
           value={sql}
           onChange={v => onSqlChange(v || '')}
           onMount={handleEditorMount}

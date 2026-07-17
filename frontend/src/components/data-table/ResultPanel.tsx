@@ -1,7 +1,8 @@
 import React from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
-import { Download, Copy, FileText, Clipboard, Hash, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Download, Copy, FileText, Clipboard, Hash, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Inbox } from 'lucide-react';
+import EmptyState from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { QueryResultDTO } from '@/lib/api/types';
 import { toast } from '@/components/ui/use-toast';
@@ -276,8 +277,16 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
         </Button>
       </div>
 
-      {/* 表格 */}
-      <div ref={parentRef} className="flex-1 overflow-auto">
+      {/* 表格（0 行时显示空态） */}
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title="查询无数据"
+          description="语句执行成功，但没有返回任何行"
+          className="flex-1"
+        />
+      ) : (
+      <div ref={parentRef} className="flex-1 overflow-auto select-text">
         <table
           className="text-xs"
           style={{
@@ -400,6 +409,7 @@ const ResultPanel: React.FC<ResultPanelProps> = ({ result, tableName }) => {
           </tbody>
         </table>
       </div>
+      )}
 
       {/* 分页栏 */}
       {showPagination && (

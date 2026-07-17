@@ -34,7 +34,7 @@
 | 数据库驱动 | go-sql-driver/mysql、jackc/pgx/v5、mattn/go-sqlite3 |
 | 日志 | rs/zerolog |
 | 前端 | React 18 + TypeScript + Vite |
-| 样式 | Tailwind CSS + shadcn/ui（Radix UI 原语） |
+| 样式 | Tailwind CSS + shadcn/ui（Radix UI 原语），支持浅色/深色/跟随系统主题（`frontend/src/lib/theme.tsx`） |
 | 状态管理 | Zustand |
 | 编辑器 | Monaco Editor（`@monaco-editor/react`） |
 | 表格 | TanStack Table + TanStack Virtual |
@@ -250,6 +250,7 @@ wails generate module    # 修改 Go API 后重新生成 frontend/wailsjs/ 绑�
 5. **`frontend/wailsjs/` 是 Wails 自动生成目录**，禁止手动编辑；修改 Go API 签名后运行 `wails generate module` 重新生成。
 6. **转换函数返回空切片而非 nil。** `make([]*X, 0)`，因为 `nil` 序列化为 JSON `null` 会导致前端 `.map()` 调用崩溃。
 7. **字段命名一致性。** Go 结构体使用 `durationMs` 等 json tag，前端 TypeScript 类型必须与 `wailsjs/go/models.ts` 中的生成名称完全一致。
+8. **版本号来源。** 底栏版本号取自 `frontend/package.json` 的 `version` 字段，发版时同步更新该字段。
 
 ### 5.2 代码风格
 

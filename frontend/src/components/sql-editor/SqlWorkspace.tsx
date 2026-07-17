@@ -4,7 +4,8 @@ import ResultPanel from '@/components/data-table/ResultPanel';
 import { useQueryStore, type QueryTabContext } from '@/stores/query';
 import { useSchemaStore } from '@/stores/schema';
 import { useConnectionStore } from '@/stores/connection';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, SquareTerminal } from 'lucide-react';
+import EmptyState from '@/components/ui/empty-state';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -28,6 +29,21 @@ const copySql = async (sql?: string) => {
 const MIN_EDITOR_HEIGHT = 120;
 const MAX_EDITOR_HEIGHT = 600;
 const DEFAULT_EDITOR_HEIGHT = 260;
+const EDITOR_HEIGHT_STORAGE_KEY = 'sqlWorkspace.editorHeight';
+
+/** 从 localStorage 恢复编辑器高度，非法值回退默认并 clamp 到允许范围 */
+const readEditorHeight = (): number => {
+  try {
+    const raw = localStorage.getItem(EDITOR_HEIGHT_STORAGE_KEY);
+    const v = raw ? Number(raw) : NaN;
+    if (Number.isFinite(v)) {
+      return Math.min(MAX_EDITOR_HEIGHT, Math.max(MIN_EDITOR_HEIGHT, v));
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_EDITOR_HEIGHT;
+};
 
 const SqlWorkspace: React.FC = () => {
   const {
@@ -77,8 +93,34 @@ const SqlWorkspace: React.FC = () => {
     }
   }, [selectedContext, activeTab?.connID, updateActiveTabContext]);
 
+  // 快捷键：⌘/Ctrl+T 新建标签页，⌘/Ctrl+W 关闭当前标签页
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 't') {
+        e.preventDefault();
+        createQueryTab(selectedContext || undefined);
+      } else if (key === 'w') {
+        e.preventDefault();
+        closeQueryTab(activeQueryTabId);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedContext, createQueryTab, closeQueryTab, activeQueryTabId]);
+
   // 拖拽分割线状态
-  const [editorHeight, setEditorHeight] = React.useState(DEFAULT_EDITOR_HEIGHT);
+  const [editorHeight, setEditorHeight] = React.useState(readEditorHeight);
+
+  // 持久化编辑器高度
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(EDITOR_HEIGHT_STORAGE_KEY, String(editorHeight));
+    } catch {
+      /* ignore */
+    }
+  }, [editorHeight]);
   const dragging = React.useRef(false);
   const startY = React.useRef(0);
   const startHeight = React.useRef(0);
@@ -200,9 +242,12 @@ const SqlWorkspace: React.FC = () => {
       {/* 结果区域：Tab 容器 */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {results.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-            执行 SQL 查询查看结果
-          </div>
+          <EmptyState
+            icon={SquareTerminal}
+            title="暂无查询结果"
+            description="编写 SQL 后按 ⌘+Enter 执行"
+            className="h-full"
+          />
         ) : (
           <>
             {/* Tab 栏 */}

@@ -1,8 +1,17 @@
 import React from 'react';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { Database, ChevronRight } from 'lucide-react';
+import { Database, ChevronRight, Sun, Moon, Monitor } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useConnectionStore } from '@/stores/connection';
+import { useTheme, type Theme } from '@/lib/theme';
+import { version as appVersion } from '../../../package.json';
 import type { ConnectionDTO } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 import ObjectTree from '@/components/object-tree/ObjectTree';
@@ -44,6 +53,33 @@ const CollapsedSidebarStrip: React.FC<{ onExpand: () => void }> = ({ onExpand })
     </Button>
   </div>
 );
+
+/** 顶栏主题切换：浅色 / 深色 / 跟随系统 */
+const ThemeToggle: React.FC = () => {
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-7 w-7" title="切换主题">
+          {resolvedTheme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
+          <DropdownMenuRadioItem value="light">
+            <Sun className="h-3.5 w-3.5 mr-2" />浅色
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark">
+            <Moon className="h-3.5 w-3.5 mr-2" />深色
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">
+            <Monitor className="h-3.5 w-3.5 mr-2" />跟随系统
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
 
 const MainLayout: React.FC = () => {
   const [showConnectionDialog, setShowConnectionDialog] = React.useState(false);
@@ -140,6 +176,7 @@ const MainLayout: React.FC = () => {
           <span>DBStudio</span>
         </div>
         <div className="flex-1" />
+        <ThemeToggle />
       </header>
 
       {/* 主体 */}
@@ -185,7 +222,7 @@ const MainLayout: React.FC = () => {
 
       {/* 底栏 */}
       <footer className="flex items-center h-6 px-3 text-xs text-muted-foreground border-t border-border shrink-0">
-        <span>DBStudio v0.1.0</span>
+        <span>DBStudio v{appVersion}</span>
         <Separator orientation="vertical" className="mx-2 h-3" />
         <span>就绪</span>
       </footer>

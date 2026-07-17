@@ -125,13 +125,14 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({ open, onOpenChange,
   const handleSave = async () => {
     if (!validateForm(false)) return;
     setSaving(true);
-    if (editConnection) {
-      await updateConnection(editConnection.id, form);
-    } else {
-      await createConnection(form);
-    }
+    // 保存失败（store 返回 null，错误已 toast）时保持对话框打开，避免表单内容丢失
+    const saved = editConnection
+      ? await updateConnection(editConnection.id, form)
+      : await createConnection(form);
     setSaving(false);
-    onOpenChange(false);
+    if (saved) {
+      onOpenChange(false);
+    }
   };
 
   return (
