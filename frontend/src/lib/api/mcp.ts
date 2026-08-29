@@ -24,12 +24,12 @@ function checkCode<T>(resp: ApiResponse<T>): T {
 }
 
 export const mcpApi = {
-  getStatus: (connID: number) =>
-    GetStatus(connID).then(r => checkCode(r as unknown as ApiResponse<McpServerStatusDTO>)),
+  getStatus: () =>
+    GetStatus().then(r => checkCode(r as unknown as ApiResponse<McpServerStatusDTO>)),
 
   start: (req: StartMcpServerRequest) =>
     Start(req as any).then(r => checkCode(r as unknown as ApiResponse<McpServerStatusDTO>)),
 
-  stop: (connID: number) =>
-    Stop(connID).then(r => checkCode(r as unknown as ApiResponse<boolean>)),
+  stop: () =>
+    Stop().then(r => checkCode(r as unknown as ApiResponse<boolean>)),
 };

@@ -12,16 +12,10 @@ import (
 	"cyancat/internal/infra/session"
 )
 
-// McpServerStopper MCP Server 停止器（由 mcpserver.Manager 实现）
-type McpServerStopper interface {
-	Stop(connID int64) error
-}
-
 // ConnectionServiceImpl 连接管理服务实现
 type ConnectionServiceImpl struct {
 	connectionRepository connection.Repository
 	sessionMgr           session.Manager
-	mcpStopper           McpServerStopper
 }
 
 // NewConnectionServiceImpl 构造 ConnectionServiceImpl
@@ -30,17 +24,6 @@ func NewConnectionServiceImpl(repo connection.Repository, sessionMgr session.Man
 	return &ConnectionServiceImpl{
 		connectionRepository: repo,
 		sessionMgr:           sessionMgr,
-	}
-}
-
-// SetMcpStopper 设置 MCP Server 停止器，用于关闭连接时联动停止 MCP Server
-func (s *ConnectionServiceImpl) SetMcpStopper(stopper McpServerStopper) {
-	s.mcpStopper = stopper
-}
-
-func (s *ConnectionServiceImpl) stopMcpServer(connID int64) {
-	if s.mcpStopper != nil {
-		_ = s.mcpStopper.Stop(connID)
 	}
 }
 
@@ -134,7 +117,7 @@ func (s *ConnectionServiceImpl) Update(id int64, cmd *UpdateConnectionCmd) (*Con
 	return s.GetByID(id)
 }
 
-// Delete 删除连接（同时关闭活跃 session 与 MCP Server）
+// Delete 删除连接（同时关闭活跃 session；全局 MCP Server 不随单个连接关闭）
 func (s *ConnectionServiceImpl) Delete(cmd *DeleteConnectionCmd) error {
 	if cmd == nil {
 		return errors.New("connectionservice: cmd cannot be nil")
@@ -145,7 +128,6 @@ func (s *ConnectionServiceImpl) Delete(cmd *DeleteConnectionCmd) error {
 	if s.sessionMgr != nil {
 		_ = s.sessionMgr.Close(cmd.ID)
 	}
-	s.stopMcpServer(cmd.ID)
 	return (&connection.Connection{ID: cmd.ID}).Delete(s.connectionRepository)
 }
 
@@ -234,7 +216,7 @@ func (s *ConnectionServiceImpl) Open(id int64) (*ConnectionBO, error) {
 	return ToConnectionBO(c), nil
 }
 
-// Close 关闭已打开的连接（同时停止对应 MCP Server）
+// Close 关闭已打开的连接（全局 MCP Server 不随单个连接关闭）
 func (s *ConnectionServiceImpl) Close(id int64) error {
 	if id <= 0 {
 		return errors.New("connectionservice: id must be positive")
@@ -242,6 +224,5 @@ func (s *ConnectionServiceImpl) Close(id int64) error {
 	if s.sessionMgr == nil {
 		return errors.New("connectionservice: session manager not configured")
 	}
-	s.stopMcpServer(id)
 	return s.sessionMgr.Close(id)
 }

@@ -17,7 +17,7 @@ import (
 	"cyancat/internal/infra/session"
 )
 
-// McpServiceImpl MCP Server 应用服务实现
+// McpServiceImpl MCP Server 应用服务实现（全局单例）
 type McpServiceImpl struct {
 	mcpRepo    *mcprepo.McpServerRepository
 	connSvc    connectionservice.ConnectionService
@@ -43,13 +43,9 @@ func NewMcpServiceImpl(
 	}
 }
 
-// GetStatus 获取指定连接的 MCP Server 状态
-func (s *McpServiceImpl) GetStatus(connID int64) (*McpServerStatusBO, error) {
-	if connID <= 0 {
-		return nil, errors.New("mcpservice: connID must be positive")
-	}
-
-	do, err := s.mcpRepo.GetByConnID(connID)
+// GetStatus 获取全局 MCP Server 状态
+func (s *McpServiceImpl) GetStatus() (*McpServerStatusBO, error) {
+	do, err := s.mcpRepo.GetGlobal()
 	if err != nil {
 		return nil, err
 	}
@@ -58,13 +54,13 @@ func (s *McpServiceImpl) GetStatus(connID int64) (*McpServerStatusBO, error) {
 	if do != nil {
 		bo = ToMcpServerStatusBO(do)
 	} else {
-		bo = &McpServerStatusBO{ConnID: connID}
+		bo = &McpServerStatusBO{}
 	}
 
 	// Enabled/Address/Token 以内存实际运行状态为准：
 	// 应用退出时仅停止内存服务、DB 中 enabled 仍为 true，
-	// 若直接采信 DB，重启后会误显示“运行中”但服务并未运行
-	if info := s.mcpMgr.GetStatus(connID); info != nil {
+	// 若直接采信 DB，重启后会误显示"运行中"但服务并未运行
+	if info := s.mcpMgr.GetStatus(); info != nil {
 		bo.Enabled = true
 		bo.Address = info.Address
 		bo.Token = info.Token
@@ -77,24 +73,14 @@ func (s *McpServiceImpl) GetStatus(connID int64) (*McpServerStatusBO, error) {
 	return bo, nil
 }
 
-// Start 启动指定连接的 MCP Server
+// Start 启动全局 MCP Server
 func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, error) {
 	if cmd == nil {
 		return nil, errors.New("mcpservice: cmd cannot be nil")
 	}
-	if cmd.ConnID <= 0 {
-		return nil, errors.New("mcpservice: connID must be positive")
-	}
 
-	// 确保连接已打开
-	if s.sessionMgr == nil || !s.sessionMgr.IsOpen(cmd.ConnID) {
-		if _, err := s.connSvc.Open(cmd.ConnID); err != nil {
-			return nil, fmt.Errorf("mcpservice: open connection failed: %w", err)
-		}
-	}
-
-	// 查询历史端口配置
-	existing, err := s.mcpRepo.GetByConnID(cmd.ConnID)
+	// 查询历史配置
+	existing, err := s.mcpRepo.GetGlobal()
 	if err != nil {
 		return nil, fmt.Errorf("mcpservice: get existing config failed: %w", err)
 	}
@@ -113,7 +99,6 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 	}
 
 	bo := &McpServerStatusBO{
-		ConnID:      cmd.ConnID,
 		Enabled:     true,
 		Token:       token,
 		AllowSelect: cmd.AllowSelect,
@@ -128,8 +113,8 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 		return nil, fmt.Errorf("mcpservice: save config failed: %w", err)
 	}
 
-	executor := &queryExecutor{
-		connID:     cmd.ConnID,
+	executor := &globalQueryExecutor{
+		connSvc:    s.connSvc,
 		querySvc:   s.querySvc,
 		sessionMgr: s.sessionMgr,
 	}
@@ -148,10 +133,14 @@ func (s *McpServiceImpl) Start(cmd *StartMcpServerCmd) (*McpServerStatusBO, erro
 		serverCfg.Port = existing.Port
 	}
 
-	info, err := s.mcpMgr.Start(cmd.ConnID, serverCfg)
+	info, err := s.mcpMgr.Start(serverCfg)
 	if err != nil {
 		if errors.Is(err, mcpserver.ErrPortConflict) {
-			return nil, &PortConflictError{Port: existing.Port}
+			port := 0
+			if existing != nil {
+				port = existing.Port
+			}
+			return nil, &PortConflictError{Port: port}
 		}
 		return nil, fmt.Errorf("mcpservice: start mcp server failed: %w", err)
 	}
@@ -190,17 +179,13 @@ func parsePortFromAddress(addr string) int {
 	return 0
 }
 
-// Stop 停止指定连接的 MCP Server
-func (s *McpServiceImpl) Stop(connID int64) error {
-	if connID <= 0 {
-		return errors.New("mcpservice: connID must be positive")
-	}
-
-	if err := s.mcpMgr.Stop(connID); err != nil {
+// Stop 停止全局 MCP Server
+func (s *McpServiceImpl) Stop() error {
+	if err := s.mcpMgr.Stop(); err != nil {
 		return err
 	}
 
-	do, err := s.mcpRepo.GetByConnID(connID)
+	do, err := s.mcpRepo.GetGlobal()
 	if err != nil {
 		return err
 	}
@@ -221,16 +206,19 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// queryExecutor 基于 QueryService 的 SQL 执行器
-type queryExecutor struct {
-	connID     int64
+// globalQueryExecutor 全局 SQL 执行器（按 connID 路由到对应连接）
+type globalQueryExecutor struct {
+	connSvc    connectionservice.ConnectionService
 	querySvc   queryservice.QueryService
 	sessionMgr session.Manager
 }
 
-func (e *queryExecutor) Execute(ctx context.Context, sql string) (*driver.Result, error) {
+func (e *globalQueryExecutor) Execute(ctx context.Context, connID int64, sql string) (*driver.Result, error) {
+	if err := e.ensureOpen(connID); err != nil {
+		return nil, err
+	}
 	bo, err := e.querySvc.Execute(&queryservice.ExecuteCmd{
-		ConnID:  e.connID,
+		ConnID:  connID,
 		SQL:     sql,
 		MaxRows: 1000,
 	})
@@ -240,45 +228,82 @@ func (e *queryExecutor) Execute(ctx context.Context, sql string) (*driver.Result
 	return queryResultBOToDriverResult(bo), nil
 }
 
-func (e *queryExecutor) ListTables(ctx context.Context) ([]driver.Table, error) {
-	database, schema, err := e.currentDatabaseSchema(ctx)
+func (e *globalQueryExecutor) ListTables(ctx context.Context, connID int64) ([]driver.Table, error) {
+	if err := e.ensureOpen(connID); err != nil {
+		return nil, err
+	}
+	database, schema, err := e.currentDatabaseSchema(ctx, connID)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := e.sessionMgr.Get(e.connID)
+	conn, err := e.sessionMgr.Get(connID)
 	if err != nil {
 		return nil, err
 	}
 	return conn.Inspector().ListTables(ctx, database, schema, 0, 0)
 }
 
-func (e *queryExecutor) DescribeTable(ctx context.Context, table string) (*driver.TableDetail, error) {
+func (e *globalQueryExecutor) DescribeTable(ctx context.Context, connID int64, table string) (*driver.TableDetail, error) {
 	if strings.TrimSpace(table) == "" {
 		return nil, errors.New("table name is required")
 	}
+	if err := e.ensureOpen(connID); err != nil {
+		return nil, err
+	}
 
-	database, schema, err := e.currentDatabaseSchema(ctx)
+	database, schema, err := e.currentDatabaseSchema(ctx, connID)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := e.sessionMgr.Get(e.connID)
+	conn, err := e.sessionMgr.Get(connID)
 	if err != nil {
 		return nil, err
 	}
 	return conn.Inspector().DescribeTable(ctx, database, schema, table)
 }
 
-func (e *queryExecutor) currentDatabaseSchema(ctx context.Context) (database, schema string, err error) {
-	driverType, err := e.sessionMgr.DriverType(e.connID)
+func (e *globalQueryExecutor) ListConnections(ctx context.Context) ([]mcpserver.ConnectionInfo, error) {
+	ids := e.sessionMgr.List()
+	result := make([]mcpserver.ConnectionInfo, 0, len(ids))
+	for _, id := range ids {
+		bo, err := e.connSvc.GetByID(id)
+		if err != nil || bo == nil {
+			continue
+		}
+		result = append(result, mcpserver.ConnectionInfo{
+			ConnID: id,
+			Name:   bo.Name,
+			Type:   string(bo.Type),
+		})
+	}
+	return result, nil
+}
+
+// ensureOpen 确保连接已打开，未打开时自动打开
+func (e *globalQueryExecutor) ensureOpen(connID int64) error {
+	if connID <= 0 {
+		return errors.New("mcpservice: connID must be positive")
+	}
+	if e.sessionMgr.IsOpen(connID) {
+		return nil
+	}
+	if _, err := e.connSvc.Open(connID); err != nil {
+		return fmt.Errorf("mcpservice: open connection %d failed: %w", connID, err)
+	}
+	return nil
+}
+
+func (e *globalQueryExecutor) currentDatabaseSchema(ctx context.Context, connID int64) (database, schema string, err error) {
+	driverType, err := e.sessionMgr.DriverType(connID)
 	if err != nil {
 		return "", "", err
 	}
 
 	switch driverType {
 	case driver.MySQL, driver.StarRocks:
-		res, err := e.Execute(ctx, "SELECT DATABASE()")
+		res, err := e.Execute(ctx, connID, "SELECT DATABASE()")
 		if err != nil {
 			return "", "", err
 		}
@@ -289,7 +314,7 @@ func (e *queryExecutor) currentDatabaseSchema(ctx context.Context) (database, sc
 		}
 		return database, "", nil
 	case driver.PostgreSQL:
-		res, err := e.Execute(ctx, "SELECT current_schema()")
+		res, err := e.Execute(ctx, connID, "SELECT current_schema()")
 		if err != nil {
 			return "", "", err
 		}

@@ -63,10 +63,9 @@ interface DesignerState {
   openDDLViewer: (ctx: DDLViewerContext) => void;
   closeDDLViewer: () => void;
 
-  // MCP Server 对话框
+  // MCP Server 对话框（全局单例，无需 connID）
   mcpServerDialogOpen: boolean;
-  mcpServerDialogContext: { connID: number } | null;
-  openMcpServerDialog: (ctx: { connID: number }) => void;
+  openMcpServerDialog: () => void;
   closeMcpServerDialog: () => void;
 }
 
@@ -87,9 +86,8 @@ export const useDesignerStore = create<DesignerState>((set) => ({
   closeDDLViewer: () => set({ ddlViewerOpen: false, ddlViewerContext: null }),
 
   mcpServerDialogOpen: false,
-  mcpServerDialogContext: null,
-  openMcpServerDialog: (ctx) => set({ mcpServerDialogOpen: true, mcpServerDialogContext: ctx }),
-  closeMcpServerDialog: () => set({ mcpServerDialogOpen: false, mcpServerDialogContext: null }),
+  openMcpServerDialog: () => set({ mcpServerDialogOpen: true }),
+  closeMcpServerDialog: () => set({ mcpServerDialogOpen: false }),
 
   dropTableConfirmOpen: false,
   dropTableContext: null,

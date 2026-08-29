@@ -2,10 +2,8 @@ package dto
 
 import "cyancat/internal/application/mcpservice"
 
-// McpServerStatusDTO MCP Server 状态 DTO
+// McpServerStatusDTO MCP Server 状态 DTO（全局单例）
 type McpServerStatusDTO struct {
-	// ConnID 连接 ID
-	ConnID int64 `json:"connID"`
 	// Enabled 是否已启用
 	Enabled bool `json:"enabled"`
 	// Address 访问地址
@@ -26,10 +24,8 @@ type McpServerStatusDTO struct {
 	AllowDDL bool `json:"allowDDL"`
 }
 
-// StartMcpServerRequest 启动 MCP Server 请求
+// StartMcpServerRequest 启动 MCP Server 请求（全局单例）
 type StartMcpServerRequest struct {
-	// ConnID 连接 ID
-	ConnID int64 `json:"connID"`
 	// AllowSelect 允许 SELECT
 	AllowSelect bool `json:"allowSelect"`
 	// AllowInsert 允许 INSERT
@@ -50,7 +46,6 @@ func ToStartMcpServerCmd(req *StartMcpServerRequest) *mcpservice.StartMcpServerC
 		return nil
 	}
 	return &mcpservice.StartMcpServerCmd{
-		ConnID:       req.ConnID,
 		AllowSelect:  req.AllowSelect,
 		AllowInsert:  req.AllowInsert,
 		AllowUpdate:  req.AllowUpdate,
@@ -66,7 +61,6 @@ func ToMcpServerStatusDTO(bo *mcpservice.McpServerStatusBO) *McpServerStatusDTO 
 		return nil
 	}
 	return &McpServerStatusDTO{
-		ConnID:      bo.ConnID,
 		Enabled:     bo.Enabled,
 		Address:     bo.Address,
 		Port:        bo.Port,

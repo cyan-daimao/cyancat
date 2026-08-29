@@ -1,9 +1,7 @@
 package mcpservice
 
-// McpServerStatusBO MCP Server 状态业务对象
+// McpServerStatusBO MCP Server 状态业务对象（全局单例）
 type McpServerStatusBO struct {
-	// ConnID 连接 ID
-	ConnID int64
 	// Enabled 是否已启用
 	Enabled bool
 	// Address 访问地址，如 http://127.0.0.1:12345/sse

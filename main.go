@@ -82,7 +82,6 @@ func main() {
 	schemaService := schemaservice.NewSchemaServiceImpl(sessionManager)
 	sqlCompleteService := sqlcompleteservice.NewServiceImpl(schemaService)
 	mcpManager := mcpserver.NewManager()
-	connectionService.SetMcpStopper(mcpManager)
 	mcpService := mcpservice.NewMcpServiceImpl(mcpRepo, connectionService, queryService, sessionManager, mcpManager)
 
 	app := adapter.NewApp(connectionService, queryService, schemaService, mcpService, sqlCompleteService)

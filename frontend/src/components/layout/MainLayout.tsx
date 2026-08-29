@@ -1,7 +1,7 @@
 import React from 'react';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { Database, ChevronRight, Sun, Moon, Monitor } from 'lucide-react';
+import { Database, ChevronRight, Sun, Moon, Monitor, Bot } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useConnectionStore } from '@/stores/connection';
+import { useDesignerStore } from '@/stores/designer';
 import { useTheme, type Theme } from '@/lib/theme';
 import { version as appVersion } from '../../../package.json';
 import type { ConnectionDTO } from '@/lib/api/types';
@@ -85,6 +86,7 @@ const MainLayout: React.FC = () => {
   const [showConnectionDialog, setShowConnectionDialog] = React.useState(false);
   const [editConnection, setEditConnection] = React.useState<ConnectionDTO | null>(null);
   const fetchConnections = useConnectionStore(s => s.fetchConnections);
+  const openMcpServerDialog = useDesignerStore(s => s.openMcpServerDialog);
 
   const [width, setWidth] = React.useState<number>(DEFAULT_WIDTH);
   const [collapsed, setCollapsed] = React.useState<boolean>(false);
@@ -173,7 +175,16 @@ const MainLayout: React.FC = () => {
       <header className="flex items-center h-10 px-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2 font-semibold text-sm">
           <Database className="h-4 w-4 text-primary" />
-          <span>DBStudio</span>
+          <span>cyancat</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={openMcpServerDialog}
+            title="MCP Server（全局）"
+          >
+            <Bot className="h-4 w-4" />
+          </Button>
         </div>
         <div className="flex-1" />
         <ThemeToggle />
@@ -222,7 +233,7 @@ const MainLayout: React.FC = () => {
 
       {/* 底栏 */}
       <footer className="flex items-center h-6 px-3 text-xs text-muted-foreground border-t border-border shrink-0">
-        <span>DBStudio v{appVersion}</span>
+        <span>cyancat v{appVersion}</span>
         <Separator orientation="vertical" className="mx-2 h-3" />
         <span>就绪</span>
       </footer>

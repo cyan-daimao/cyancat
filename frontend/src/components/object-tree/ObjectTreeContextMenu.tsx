@@ -55,7 +55,6 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
   const { openConnIds, openConnection, closeConnection, connections, deleteConnection } = useConnectionStore();
   const {
     openCreateDatabase,
-    openMcpServerDialog,
     openTableDesigner,
     openDDLViewer,
     openDropTableConfirm,
@@ -150,10 +149,6 @@ const ObjectTreeContextMenu: React.FC<ObjectTreeContextMenuProps> = ({ node, chi
       }
       case 'new-database': {
         openCreateDatabase({ connID: node.connID });
-        return;
-      }
-      case 'open-mcp-server': {
-        openMcpServerDialog({ connID: node.connID });
         return;
       }
       case 'connection-properties': {

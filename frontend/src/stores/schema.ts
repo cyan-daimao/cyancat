@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { TableDetailDTO, TableDTO } from '@/lib/api/types';
 import { schemaApi } from '@/lib/api/schema';
+import { useConnectionStore } from '@/stores/connection';
 import { toast } from '@/components/ui/use-toast';
 
 // 每批加载的表/视图数量
@@ -80,6 +81,59 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
 
   loadDatabases: async (connID) => {
     try {
+      const conn = useConnectionStore.getState().connections.find(c => c.id === connID);
+      const connDB = conn?.database?.trim() || '';
+      const connType = conn?.type || '';
+
+      // 连接配置了数据库：跳过 database 层级
+      if (connDB) {
+        if (connType === 'postgres' || connType === 'starrocks') {
+          // PG: 直接展示 schema 层（schema → table）
+          const schemas = await schemaApi.listSchemas(connID, connDB);
+          const nodes: TreeNode[] = schemas.map(s => ({
+            key: `conn:${connID}:db:${connDB}:schema:${s.name}`,
+            label: s.name,
+            type: 'schema' as const,
+            connID,
+            database: connDB,
+            schema: s.name,
+            loaded: false,
+            children: [],
+          }));
+          set(state => ({ trees: { ...state.trees, [connID]: nodes } }));
+        } else {
+          // MySQL/SQLite: 直接展示表层（table 作为根节点的子节点）
+          const [tables, views] = await Promise.all([
+            schemaApi.listTables(connID, connDB, connDB, DEFAULT_TABLE_PAGE_SIZE, 0),
+            schemaApi.listViews(connID, connDB, connDB, DEFAULT_TABLE_PAGE_SIZE, 0).catch(() => [] as TableDTO[]),
+          ]);
+          const tableNodes: TreeNode[] = tables.map(t => ({
+            key: `conn:${connID}:db:${connDB}:schema:${connDB}:table:${t.name}`,
+            label: t.name,
+            type: 'table' as const,
+            connID,
+            database: connDB,
+            schema: connDB,
+            tableName: t.name,
+            loaded: false,
+            children: [],
+          }));
+          const viewNodes: TreeNode[] = views.map((v: any) => ({
+            key: `conn:${connID}:db:${connDB}:schema:${connDB}:view:${v.name}`,
+            label: v.name,
+            type: 'view' as const,
+            connID,
+            database: connDB,
+            schema: connDB,
+            tableName: v.name,
+            loaded: true,
+          }));
+          set(state => ({ trees: { ...state.trees, [connID]: [...tableNodes, ...viewNodes] } }));
+        }
+        return;
+      }
+
+      // 未配置数据库：保持原有层级
       const dbs = await schemaApi.listDatabases(connID);
       const nodes: TreeNode[] = dbs.map(db => ({
         key: `conn:${connID}:db:${db.name}`,

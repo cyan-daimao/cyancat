@@ -3,12 +3,10 @@ package mcprepo
 
 import "time"
 
-// McpServerDO MCP Server 配置持久层对象
+// McpServerDO MCP Server 配置持久层对象（全局单例，固定 ID=1）
 type McpServerDO struct {
-	// ID 主键
-	ID int64 `gorm:"column:id; primaryKey; autoIncrement; comment:'主键id'"`
-	// ConnID 连接 ID
-	ConnID int64 `gorm:"column:conn_id; not null; uniqueIndex:uk_conn_id; comment:'连接ID'"`
+	// ID 主键（全局唯一配置，固定为 1）
+	ID int64 `gorm:"column:id; primaryKey; comment:'主键id'"`
 	// Enabled 是否已启用
 	Enabled bool `gorm:"column:enabled; not null; default:false; comment:'是否已启用'"`
 	// AllowSelect 允许 SELECT

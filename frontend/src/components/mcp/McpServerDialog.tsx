@@ -6,24 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useDesignerStore } from '@/stores/designer';
-import { useConnectionStore } from '@/stores/connection';
 import { mcpApi, McpPortConflictError } from '@/lib/api/mcp';
 import { toast } from '@/components/ui/use-toast';
 import { Bot, Copy, Power, PowerOff, Loader2 } from 'lucide-react';
 import type { McpServerStatusDTO } from '@/lib/api/types';
 
-const McpServerDialog: React.FC = () => {
-  const { mcpServerDialogOpen, mcpServerDialogContext, closeMcpServerDialog } = useDesignerStore();
-  const connID = mcpServerDialogContext?.connID ?? 0;
-  const connName = useConnectionStore(s => s.connections.find(c => c.id === connID)?.name);
+// 全局 MCP Server 名称（固定，所有连接共享）
+const SERVER_NAME = 'dbstudio';
 
-  // MCP server 名使用数据源名称，多个数据源分别安装时互不冲突；
-  // sanitize：保留中英文/数字/_-，空白与 shell 特殊字符转为 -
-  const serverName = React.useMemo(() => {
-    const base = (connName || `connection-${connID}`).trim();
-    const sanitized = base.replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '');
-    return sanitized || `connection-${connID}`;
-  }, [connName, connID]);
+const McpServerDialog: React.FC = () => {
+  const { mcpServerDialogOpen, closeMcpServerDialog } = useDesignerStore();
 
   const [status, setStatus] = React.useState<McpServerStatusDTO | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -37,10 +29,9 @@ const McpServerDialog: React.FC = () => {
   const [allowDDL, setAllowDDL] = React.useState(false);
 
   const fetchStatus = React.useCallback(async () => {
-    if (!connID) return;
     setLoading(true);
     try {
-      const s = await mcpApi.getStatus(connID);
+      const s = await mcpApi.getStatus();
       setStatus(s);
       setAllowSelect(s.allowSelect);
       setAllowInsert(s.allowInsert);
@@ -52,23 +43,21 @@ const McpServerDialog: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [connID]);
+  }, []);
 
   React.useEffect(() => {
-    if (mcpServerDialogOpen && connID) {
+    if (mcpServerDialogOpen) {
       fetchStatus();
     }
     if (!mcpServerDialogOpen) {
       setStatus(null);
     }
-  }, [mcpServerDialogOpen, connID, fetchStatus]);
+  }, [mcpServerDialogOpen, fetchStatus]);
 
   const doStart = async (forceNewPort = false): Promise<void> => {
-    if (!connID) return;
     setStarting(true);
     try {
       const s = await mcpApi.start({
-        connID,
         allowSelect,
         allowInsert,
         allowUpdate,
@@ -95,10 +84,9 @@ const McpServerDialog: React.FC = () => {
   const handleStart = () => doStart(false);
 
   const handleStop = async () => {
-    if (!connID) return;
     setStopping(true);
     try {
-      await mcpApi.stop(connID);
+      await mcpApi.stop();
       setStatus(prev => prev ? { ...prev, enabled: false, address: '', token: '' } : null);
       toast({ title: 'MCP Server 已关闭' });
     } catch (e: any) {
@@ -121,10 +109,10 @@ const McpServerDialog: React.FC = () => {
   const token = status?.enabled && status.token ? status.token : '';
 
   const installCommand = sseUrl
-    ? `claude mcp add --transport sse ${serverName} "${sseUrl}" \\\n  --header "Authorization: Bearer ${token}"`
+    ? `claude mcp add --transport sse ${SERVER_NAME} "${sseUrl}" \\\n  --header "Authorization: Bearer ${token}"`
     : '';
 
-  const uninstallCommand = `claude mcp remove ${serverName}`;
+  const uninstallCommand = `claude mcp remove ${SERVER_NAME}`;
 
   const curlExample = sseUrl
     ? `curl -N -H "Accept: text/event-stream" -H "Authorization: Bearer ${token}" "${sseUrl}"`
@@ -133,7 +121,7 @@ const McpServerDialog: React.FC = () => {
   const clientConfig = sseUrl
     ? JSON.stringify({
         mcpServers: {
-          [serverName]: {
+          [SERVER_NAME]: {
             transport: 'sse',
             url: sseUrl,
             headers: {
@@ -193,11 +181,12 @@ const McpServerDialog: React.FC = () => {
 
   return (
     <Dialog open={mcpServerDialogOpen} onOpenChange={(o) => !o && closeMcpServerDialog()}>
-      <DialogContent className="max-w-4xl" onPointerDownOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             MCP Server
+            <span className="text-xs font-normal text-muted-foreground">（全局，所有连接共享）</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -207,11 +196,11 @@ const McpServerDialog: React.FC = () => {
             加载中…
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2 overflow-y-auto flex-1 min-h-0 pr-1">
             {/* 左侧：权限与操作 */}
             <div className="space-y-5">
               <div>
-                <div className="text-sm font-medium mb-2">允许执行的操作</div>
+                <div className="text-sm font-medium mb-2">允许执行的操作（全局生效）</div>
                 <div className="grid grid-cols-2 gap-3 p-3 rounded-md border border-border bg-muted/30">
                   {renderCheckbox('mcp-allow-select', 'SELECT', allowSelect, setAllowSelect, starting || stopping)}
                   {renderCheckbox('mcp-allow-insert', 'INSERT', allowInsert, setAllowInsert, starting || stopping)}
@@ -244,7 +233,7 @@ const McpServerDialog: React.FC = () => {
                     关闭 MCP Server
                   </Button>
                 ) : (
-                  <Button onClick={handleStart} disabled={starting || loading || !connID} className="flex-1">
+                  <Button onClick={handleStart} disabled={starting || loading} className="flex-1">
                     {starting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
                     <Power className="h-4 w-4 mr-1" />
                     开启 MCP Server
@@ -273,7 +262,7 @@ const McpServerDialog: React.FC = () => {
           </div>
         )}
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="gap-2 shrink-0">
           <Button variant="outline" onClick={() => closeMcpServerDialog()}>
             关闭
           </Button>

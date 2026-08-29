@@ -12,21 +12,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
+import { getCommonTypes, supportsUnsigned } from '@/lib/db-types';
 import type { FieldDraft } from './TableDesignerDialog';
-
-const COMMON_TYPES = [
-  'INT', 'BIGINT', 'SMALLINT', 'TINYINT',
-  'VARCHAR', 'CHAR', 'TEXT', 'LONGTEXT', 'MEDIUMTEXT',
-  'DATETIME', 'TIMESTAMP', 'DATE', 'TIME',
-  'DECIMAL', 'FLOAT', 'DOUBLE',
-  'JSON', 'BLOB', 'BOOLEAN', 'ENUM',
-];
 
 interface FieldGridProps {
   fields: FieldDraft[];
   setFields: React.Dispatch<React.SetStateAction<FieldDraft[]>>;
   primaryKey: string[];
   setPrimaryKey: React.Dispatch<React.SetStateAction<string[]>>;
+  connectionType?: string;
   readOnly?: boolean;
 }
 
@@ -35,16 +29,19 @@ function newId(): string {
   return `draft_${++nextId}`;
 }
 
-function emptyField(): FieldDraft {
+function emptyField(connectionType?: string): FieldDraft {
+  const defaultType = connectionType === 'postgres' ? 'INTEGER' : 'INT';
   return {
-    id: newId(), name: '', dataType: 'INT', typeLength: null,
+    id: newId(), name: '', dataType: defaultType, typeLength: null,
     precision: null, scale: null, nullable: true, autoIncrement: false,
     unsigned: false, defaultValue: null, comment: '', collation: '',
     status: 'new',
   };
 }
 
-const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, setPrimaryKey, readOnly }) => {
+const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, setPrimaryKey, connectionType, readOnly }) => {
+  const commonTypes = getCommonTypes(connectionType);
+  const showUnsigned = supportsUnsigned(connectionType);
   const updateField = (id: string, patch: Partial<FieldDraft>) => {
     setFields(prev => prev.map(f => {
       if (f.id !== id) return f;
@@ -55,7 +52,7 @@ const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, se
   };
 
   const addField = () => {
-    setFields(prev => [...prev, emptyField()]);
+    setFields(prev => [...prev, emptyField(connectionType)]);
   };
 
   const insertAbove = (id: string) => {
@@ -63,7 +60,7 @@ const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, se
       const idx = prev.findIndex(f => f.id === id);
       if (idx < 0) return prev;
       const next = [...prev];
-      next.splice(idx, 0, emptyField());
+      next.splice(idx, 0, emptyField(connectionType));
       return next;
     });
   };
@@ -73,7 +70,7 @@ const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, se
       const idx = prev.findIndex(f => f.id === id);
       if (idx < 0) return prev;
       const next = [...prev];
-      next.splice(idx + 1, 0, emptyField());
+      next.splice(idx + 1, 0, emptyField(connectionType));
       return next;
     });
   };
@@ -143,7 +140,7 @@ const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, se
               <th className="px-2 py-1 w-12 text-center">空</th>
               <th className="px-2 py-1 w-12 text-center">PK</th>
               <th className="px-2 py-1 w-12 text-center">AI</th>
-              <th className="px-2 py-1 w-16 text-center">无符号</th>
+              {showUnsigned && <th className="px-2 py-1 w-16 text-center">无符号</th>}
               <th className="px-2 py-1 min-w-[100px]">默认值</th>
               <th className="px-2 py-1 min-w-[140px]">注释</th>
               {!readOnly && <th className="px-2 py-1 w-12"></th>}
@@ -179,7 +176,7 @@ const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, se
                         >
                           <SelectTrigger className="h-6 text-xs px-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {COMMON_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                            {commonTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </td>
@@ -225,14 +222,16 @@ const FieldGrid: React.FC<FieldGridProps> = ({ fields, setFields, primaryKey, se
                           disabled={readOnly || deleted}
                         />
                       </td>
-                      <td className="px-2 py-0.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={f.unsigned}
-                          onChange={e => updateField(f.id, { unsigned: e.target.checked })}
-                          disabled={readOnly || deleted}
-                        />
-                      </td>
+                      {showUnsigned && (
+                        <td className="px-2 py-0.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={f.unsigned}
+                            onChange={e => updateField(f.id, { unsigned: e.target.checked })}
+                            disabled={readOnly || deleted}
+                          />
+                        </td>
+                      )}
                       <td className="px-1 py-0.5">
                         <Input
                           className="h-6 text-xs px-1"

@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Table as TableIcon } from 'lucide-react';
 import { useDesignerStore } from '@/stores/designer';
+import { useConnectionStore } from '@/stores/connection';
 import { schemaApi } from '@/lib/api/schema';
 import { toast } from '@/components/ui/use-toast';
+import { normalizeDataTypeFor, supportsTableOptions } from '@/lib/db-types';
 import FieldGrid from './FieldGrid';
 import IndexGrid from './IndexGrid';
 import ForeignKeyGrid from './ForeignKeyGrid';
@@ -74,23 +76,12 @@ function newDraftId(): string {
   return `draft_${nextDraftId++}`;
 }
 
-// 标准化数据库返回的类型字符串到 UI 候选值集合
-// 例：'varchar(255)' → 'VARCHAR', 'int(11) unsigned' → 'INT', 'decimal(10,2)' → 'DECIMAL'
-function normalizeDataType(raw: string): string {
-  if (!raw) return 'INT';
-  // 去掉括号及其内容
-  let s = raw.replace(/\(.*?\)/g, '');
-  // 去掉常见后缀修饰词 (unsigned / zerofill / signed)
-  s = s.replace(/\b(unsigned|zerofill|signed)\b/gi, '');
-  return s.trim().toUpperCase();
-}
-
 // ColumnDTO → FieldDraft
-function columnToField(c: ColumnDTO): FieldDraft {
+function columnToField(c: ColumnDTO, connectionType?: string): FieldDraft {
   return {
     id: newDraftId(),
     name: c.name,
-    dataType: normalizeDataType(c.databaseType),
+    dataType: normalizeDataTypeFor(connectionType, c.databaseType),
     typeLength: c.typeLength,
     precision: c.precision,
     scale: c.scale,
@@ -175,7 +166,12 @@ function fkDraftToSpec(fk: FKDraft): ForeignKeySpecDTO {
 
 const TableDesignerDialog: React.FC = () => {
   const { tableDesignerOpen, tableDesignerContext, closeTableDesigner } = useDesignerStore();
+  const connections = useConnectionStore(s => s.connections);
 
+  const ctx = tableDesignerContext;
+  const connectionType = connections.find(c => c.id === ctx?.connID)?.type;
+  const isPG = connectionType === 'postgres';
+  const isMy = supportsTableOptions(connectionType);
   const [fields, setFields] = React.useState<FieldDraft[]>([]);
   const [indexes, setIndexes] = React.useState<IndexDraft[]>([]);
   const [foreignKeys, setForeignKeys] = React.useState<FKDraft[]>([]);
@@ -188,7 +184,6 @@ const TableDesignerDialog: React.FC = () => {
   const [showRiskConfirm, setShowRiskConfirm] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState('fields');
 
-  const ctx = tableDesignerContext;
   const isEdit = ctx?.mode === 'edit';
   const isView = ctx?.mode === 'view';
 
@@ -202,15 +197,15 @@ const TableDesignerDialog: React.FC = () => {
       setLoading(true);
       schemaApi.describeTable(ctx.connID, ctx.database, ctx.schema, ctx.tableName)
         .then(detail => {
-          setFields((detail.columns ?? []).map(columnToField));
+          setFields((detail.columns ?? []).map(c => columnToField(c, connectionType)));
           setIndexes((detail.indexes ?? []).map(indexToDraft));
           setForeignKeys((detail.foreignKeys ?? []).map(fkToDraft));
           setOptions({
             name: detail.name,
             comment: detail.comment || '',
-            engine: 'InnoDB',
-            charset: 'utf8mb4',
-            collation: 'utf8mb4_general_ci',
+            engine: isMy ? 'InnoDB' : '',
+            charset: isMy ? 'utf8mb4' : '',
+            collation: isMy ? 'utf8mb4_general_ci' : '',
           });
           // 找出主键列
           const pk = (detail.indexes ?? []).find(i => i.primary);
@@ -221,17 +216,22 @@ const TableDesignerDialog: React.FC = () => {
     } else {
       // create 模式
       setFields([{
-        id: newDraftId(), name: '', dataType: 'INT', typeLength: null,
+        id: newDraftId(), name: '', dataType: isPG ? 'INTEGER' : 'INT', typeLength: null,
         precision: null, scale: null, nullable: false, autoIncrement: false,
         unsigned: false, defaultValue: null, comment: '', collation: '',
         status: 'new',
       }]);
       setIndexes([]);
       setForeignKeys([]);
-      setOptions({ name: '', comment: '', engine: 'InnoDB', charset: 'utf8mb4', collation: 'utf8mb4_general_ci' });
+      setOptions({
+        name: '', comment: '',
+        engine: isMy ? 'InnoDB' : '',
+        charset: isMy ? 'utf8mb4' : '',
+        collation: isMy ? 'utf8mb4_general_ci' : '',
+      });
       setPrimaryKey([]);
     }
-  }, [tableDesignerOpen, ctx?.connID, ctx?.database, ctx?.schema, ctx?.tableName, ctx?.mode]);
+  }, [tableDesignerOpen, ctx?.connID, ctx?.database, ctx?.schema, ctx?.tableName, ctx?.mode, connectionType]);
 
   // 检测破坏性操作
   const hasDestructiveOps = (): boolean => {
@@ -277,9 +277,9 @@ const TableDesignerDialog: React.FC = () => {
           primaryKey,
           indexes: activeIndexes.map(indexDraftToSpec),
           foreignKeys: activeFKs.map(fkDraftToSpec),
-          engine: options.engine,
-          charset: options.charset,
-          collation: options.collation,
+          engine: isMy ? options.engine : '',
+          charset: isMy ? options.charset : '',
+          collation: isMy ? options.collation : '',
           comment: options.comment,
         };
         await schemaApi.createTable(req);
@@ -299,9 +299,9 @@ const TableDesignerDialog: React.FC = () => {
           dropIndexes: indexes.filter(i => i.status === 'deleted').map(i => i.name),
           addForeignKeys: foreignKeys.filter(fk => fk.status === 'new').map(fkDraftToSpec),
           dropForeignKeys: foreignKeys.filter(fk => fk.status === 'deleted').map(fk => fk.name),
-          engine: options.engine,
-          charset: options.charset,
-          collation: options.collation,
+          engine: isMy ? options.engine : '',
+          charset: isMy ? options.charset : '',
+          collation: isMy ? options.collation : '',
           comment: options.comment,
         };
         await schemaApi.alterTable(req);
@@ -348,6 +348,7 @@ const TableDesignerDialog: React.FC = () => {
                     setFields={setFields}
                     primaryKey={primaryKey}
                     setPrimaryKey={setPrimaryKey}
+                    connectionType={connectionType}
                     readOnly={isView}
                   />
                 </TabsContent>
@@ -374,6 +375,7 @@ const TableDesignerDialog: React.FC = () => {
                     options={options}
                     setOptions={setOptions}
                     connID={ctx?.connID || 0}
+                    connectionType={connectionType}
                     readOnly={isView || isEdit}
                   />
                 </TabsContent>

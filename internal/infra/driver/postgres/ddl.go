@@ -92,14 +92,16 @@ func (g *ddlGenerator) renderColumnDef(c driver.ColumnSpec) (string, error) {
 
 	b.WriteString(dataType)
 
-	// 拼长度/精度
-	switch {
-	case c.Precision != nil && c.Scale != nil:
-		b.WriteString(fmt.Sprintf("(%d,%d)", *c.Precision, *c.Scale))
-	case c.Precision != nil:
-		b.WriteString(fmt.Sprintf("(%d)", *c.Precision))
-	case c.TypeLength != nil:
-		b.WriteString(fmt.Sprintf("(%d)", *c.TypeLength))
+	// 拼长度/精度（SERIAL 系列类型不支持长度修饰）
+	if !isPGSerialType(dataType) {
+		switch {
+		case c.Precision != nil && c.Scale != nil:
+			b.WriteString(fmt.Sprintf("(%d,%d)", *c.Precision, *c.Scale))
+		case c.Precision != nil:
+			b.WriteString(fmt.Sprintf("(%d)", *c.Precision))
+		case c.TypeLength != nil:
+			b.WriteString(fmt.Sprintf("(%d)", *c.TypeLength))
+		}
 	}
 
 	if !c.Nullable {
@@ -133,6 +135,11 @@ func formatPGDefaultValue(v, dataType string) string {
 		return trim
 	}
 	return "'" + escapePGString(v) + "'"
+}
+
+func isPGSerialType(t string) bool {
+	up := strings.ToUpper(strings.TrimSpace(t))
+	return up == "SERIAL" || up == "BIGSERIAL" || up == "SMALLSERIAL"
 }
 
 func isPGNumericType(t string) bool {
@@ -422,13 +429,15 @@ func (g *ddlGenerator) renderAlterColumnActions(c driver.ColumnSpec, schema, tab
 		}
 	}
 	typeStr := dataType
-	switch {
-	case c.Precision != nil && c.Scale != nil:
-		typeStr += fmt.Sprintf("(%d,%d)", *c.Precision, *c.Scale)
-	case c.Precision != nil:
-		typeStr += fmt.Sprintf("(%d)", *c.Precision)
-	case c.TypeLength != nil:
-		typeStr += fmt.Sprintf("(%d)", *c.TypeLength)
+	if !isPGSerialType(dataType) {
+		switch {
+		case c.Precision != nil && c.Scale != nil:
+			typeStr += fmt.Sprintf("(%d,%d)", *c.Precision, *c.Scale)
+		case c.Precision != nil:
+			typeStr += fmt.Sprintf("(%d)", *c.Precision)
+		case c.TypeLength != nil:
+			typeStr += fmt.Sprintf("(%d)", *c.TypeLength)
+		}
 	}
 	stmts = append(stmts, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", tbl, colName, typeStr))
 
@@ -439,8 +448,8 @@ func (g *ddlGenerator) renderAlterColumnActions(c driver.ColumnSpec, schema, tab
 		stmts = append(stmts, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", tbl, colName))
 	}
 
-	// DEFAULT
-	if c.DefaultValue != nil && !c.AutoIncrement {
+	// DEFAULT（SERIAL 类型自带 nextval 默认值，无需显式 SET DEFAULT）
+	if c.DefaultValue != nil && !c.AutoIncrement && !isPGSerialType(dataType) {
 		stmts = append(stmts, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s",
 			tbl, colName, formatPGDefaultValue(*c.DefaultValue, dataType)))
 	}

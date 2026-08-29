@@ -16,37 +16,45 @@ import (
 )
 
 type mockExecutor struct {
-	executeFunc      func(ctx context.Context, sql string) (*driver.Result, error)
-	listTablesFunc   func(ctx context.Context) ([]driver.Table, error)
-	describeTableFunc func(ctx context.Context, table string) (*driver.TableDetail, error)
+	executeFunc        func(ctx context.Context, connID int64, sql string) (*driver.Result, error)
+	listTablesFunc     func(ctx context.Context, connID int64) ([]driver.Table, error)
+	describeTableFunc  func(ctx context.Context, connID int64, table string) (*driver.TableDetail, error)
+	listConnsFunc      func(ctx context.Context) ([]ConnectionInfo, error)
 }
 
-func (m *mockExecutor) Execute(ctx context.Context, sql string) (*driver.Result, error) {
+func (m *mockExecutor) Execute(ctx context.Context, connID int64, sql string) (*driver.Result, error) {
 	if m.executeFunc != nil {
-		return m.executeFunc(ctx, sql)
+		return m.executeFunc(ctx, connID, sql)
 	}
 	return &driver.Result{}, nil
 }
 
-func (m *mockExecutor) ListTables(ctx context.Context) ([]driver.Table, error) {
+func (m *mockExecutor) ListTables(ctx context.Context, connID int64) ([]driver.Table, error) {
 	if m.listTablesFunc != nil {
-		return m.listTablesFunc(ctx)
+		return m.listTablesFunc(ctx, connID)
 	}
 	return nil, nil
 }
 
-func (m *mockExecutor) DescribeTable(ctx context.Context, table string) (*driver.TableDetail, error) {
+func (m *mockExecutor) DescribeTable(ctx context.Context, connID int64, table string) (*driver.TableDetail, error) {
 	if m.describeTableFunc != nil {
-		return m.describeTableFunc(ctx, table)
+		return m.describeTableFunc(ctx, connID, table)
 	}
 	return nil, errors.New("not implemented")
+}
+
+func (m *mockExecutor) ListConnections(ctx context.Context) ([]ConnectionInfo, error) {
+	if m.listConnsFunc != nil {
+		return m.listConnsFunc(ctx)
+	}
+	return []ConnectionInfo{{ConnID: 1, Name: "test", Type: "mysql"}}, nil
 }
 
 func TestServerStartStop(t *testing.T) {
 	exec := &mockExecutor{}
 	allow := map[string]bool{"select": true}
 
-	srv, err := NewServer(1, "test-token", allow, exec)
+	srv, err := NewServer("test-token", allow, exec)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -97,13 +105,13 @@ func TestServerStartStop(t *testing.T) {
 
 func TestServerPermissionEnforcement(t *testing.T) {
 	exec := &mockExecutor{
-		executeFunc: func(ctx context.Context, sql string) (*driver.Result, error) {
+		executeFunc: func(ctx context.Context, connID int64, sql string) (*driver.Result, error) {
 			return &driver.Result{RowsAffected: 1}, nil
 		},
 	}
 	allow := map[string]bool{"select": true, "insert": false}
 
-	srv, err := NewServer(1, "token", allow, exec)
+	srv, err := NewServer("token", allow, exec)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -154,7 +162,7 @@ func TestServerPortConflict(t *testing.T) {
 	exec := &mockExecutor{}
 	allow := map[string]bool{"select": true}
 
-	srv1, err := NewServer(1, "token1", allow, exec)
+	srv1, err := NewServer("token1", allow, exec)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -169,7 +177,7 @@ func TestServerPortConflict(t *testing.T) {
 		t.Fatalf("failed to parse port from address: %s", addr1)
 	}
 
-	srv2, err := NewServer(2, "token2", allow, exec)
+	srv2, err := NewServer("token2", allow, exec)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -193,15 +201,35 @@ func parsePortFromAddress(addr string) int {
 	return 0
 }
 
+func TestGetConnID(t *testing.T) {
+	// 正常解析
+	id, err := getConnID(map[string]any{"conn_id": float64(42)})
+	if err != nil || id != 42 {
+		t.Fatalf("getConnID(42) = %d, %v", id, err)
+	}
+
+	// 缺少 conn_id
+	_, err = getConnID(map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing conn_id")
+	}
+
+	// 非正数
+	_, err = getConnID(map[string]any{"conn_id": float64(0)})
+	if err == nil {
+		t.Fatal("expected error for zero conn_id")
+	}
+}
+
 func TestHandleExecuteRequiresWhere(t *testing.T) {
 	exec := &mockExecutor{
-		executeFunc: func(ctx context.Context, sql string) (*driver.Result, error) {
+		executeFunc: func(ctx context.Context, connID int64, sql string) (*driver.Result, error) {
 			return &driver.Result{RowsAffected: 1}, nil
 		},
 	}
 	allow := map[string]bool{"insert": true, "update": true, "delete": true}
 
-	srv, err := NewServer(1, "token", allow, exec)
+	srv, err := NewServer("token", allow, exec)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -210,7 +238,7 @@ func TestHandleExecuteRequiresWhere(t *testing.T) {
 	res, err := srv.handleExecute(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      "execute",
-			Arguments: map[string]any{"sql": "UPDATE t SET a = 1"},
+			Arguments: map[string]any{"conn_id": float64(1), "sql": "UPDATE t SET a = 1"},
 		},
 	})
 	if err != nil {
@@ -224,7 +252,7 @@ func TestHandleExecuteRequiresWhere(t *testing.T) {
 	res, err = srv.handleExecute(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      "execute",
-			Arguments: map[string]any{"sql": "DELETE FROM t"},
+			Arguments: map[string]any{"conn_id": float64(1), "sql": "DELETE FROM t"},
 		},
 	})
 	if err != nil {

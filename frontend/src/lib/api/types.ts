@@ -312,9 +312,8 @@ export interface DropTableRequest {
   name: string;
 }
 
-// MCP Server DTOs
+// MCP Server DTOs（全局单例）
 export interface McpServerStatusDTO {
-  connID: number;
   enabled: boolean;
   address: string;
   port: number;
@@ -327,7 +326,6 @@ export interface McpServerStatusDTO {
 }
 
 export interface StartMcpServerRequest {
-  connID: number;
   allowSelect: boolean;
   allowInsert: boolean;
   allowUpdate: boolean;

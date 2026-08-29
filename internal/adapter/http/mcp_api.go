@@ -9,7 +9,7 @@ import (
 	"cyancat/internal/infra/api"
 )
 
-// McpAPI MCP Server 管理 API（通过 Wails Bindings 暴露给前端）
+// McpAPI MCP Server 管理 API（通过 Wails Bindings 暴露给前端，全局单例模式）
 type McpAPI struct {
 	svc mcpservice.McpService
 }
@@ -19,26 +19,19 @@ func NewMcpAPI(svc mcpservice.McpService) *McpAPI {
 	return &McpAPI{svc: svc}
 }
 
-// GetStatus 获取 MCP Server 状态
-func (a *McpAPI) GetStatus(connID int64) *api.Response[*dto.McpServerStatusDTO] {
-	if connID <= 0 {
-		return api.Fail[*dto.McpServerStatusDTO](api.BadRequestCode, nil, "connID must be positive")
-	}
-
-	bo, err := a.svc.GetStatus(connID)
+// GetStatus 获取全局 MCP Server 状态
+func (a *McpAPI) GetStatus() *api.Response[*dto.McpServerStatusDTO] {
+	bo, err := a.svc.GetStatus()
 	if err != nil {
 		return api.Fail[*dto.McpServerStatusDTO](api.ErrorCode, nil, err.Error())
 	}
 	return api.Success(dto.ToMcpServerStatusDTO(bo))
 }
 
-// Start 启动 MCP Server
+// Start 启动全局 MCP Server
 func (a *McpAPI) Start(req *dto.StartMcpServerRequest) *api.Response[*dto.McpServerStatusDTO] {
 	if req == nil {
 		return api.Fail[*dto.McpServerStatusDTO](api.BadRequestCode, nil, "request cannot be nil")
-	}
-	if req.ConnID <= 0 {
-		return api.Fail[*dto.McpServerStatusDTO](api.BadRequestCode, nil, "connID must be positive")
 	}
 
 	bo, err := a.svc.Start(dto.ToStartMcpServerCmd(req))
@@ -47,7 +40,7 @@ func (a *McpAPI) Start(req *dto.StartMcpServerRequest) *api.Response[*dto.McpSer
 		if errors.As(err, &conflict) {
 			return api.Fail[*dto.McpServerStatusDTO](
 				api.ConflictCode,
-				&dto.McpServerStatusDTO{ConnID: req.ConnID, Port: conflict.Port},
+				&dto.McpServerStatusDTO{Port: conflict.Port},
 				conflict.Error(),
 			)
 		}
@@ -56,13 +49,9 @@ func (a *McpAPI) Start(req *dto.StartMcpServerRequest) *api.Response[*dto.McpSer
 	return api.Success(dto.ToMcpServerStatusDTO(bo))
 }
 
-// Stop 停止 MCP Server
-func (a *McpAPI) Stop(connID int64) *api.Response[bool] {
-	if connID <= 0 {
-		return api.Fail[bool](api.BadRequestCode, false, "connID must be positive")
-	}
-
-	if err := a.svc.Stop(connID); err != nil {
+// Stop 停止全局 MCP Server
+func (a *McpAPI) Stop() *api.Response[bool] {
+	if err := a.svc.Stop(); err != nil {
 		return api.Fail[bool](api.ErrorCode, false, err.Error())
 	}
 	return api.Success(true)
